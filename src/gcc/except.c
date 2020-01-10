@@ -1,6 +1,6 @@
 /* Implements exception handling.
    Copyright (C) 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Mike Stump <mrs@cygnus.com>.
 
@@ -1835,7 +1835,7 @@ sjlj_emit_function_enter (rtx dispatch_label)
 
 #ifdef DONT_USE_BUILTIN_SETJMP
   {
-    rtx x;
+    rtx x, last;
     x = emit_library_call_value (setjmp_libfunc, NULL_RTX, LCT_RETURNS_TWICE,
 				 TYPE_MODE (integer_type_node), 1,
 				 plus_constant (XEXP (fc, 0),
@@ -1843,7 +1843,12 @@ sjlj_emit_function_enter (rtx dispatch_label)
 
     emit_cmp_and_jump_insns (x, const0_rtx, NE, 0,
 			     TYPE_MODE (integer_type_node), 0, dispatch_label);
-    add_reg_br_prob_note (get_insns (), REG_BR_PROB_BASE/100);
+    last = get_last_insn ();
+    if (JUMP_P (last) && any_condjump_p (last))
+      {
+        gcc_assert (!find_reg_note (last, REG_BR_PROB, 0));
+        add_reg_note (last, REG_BR_PROB, GEN_INT (REG_BR_PROB_BASE / 100));
+      }
   }
 #else
   expand_builtin_setjmp_setup (plus_constant (XEXP (fc, 0), sjlj_fc_jbuf_ofs),
@@ -2758,10 +2763,11 @@ can_throw_external (const_rtx insn)
 
 /* Set TREE_NOTHROW and crtl->all_throwers_are_sibcalls.  */
 
-unsigned int
+static unsigned int
 set_nothrow_function_flags (void)
 {
   rtx insn;
+  struct cgraph_node *node;
 
   /* If we don't know that this implementation of the function will
      actually be used, then we must not set TREE_NOTHROW, since
@@ -2769,7 +2775,8 @@ set_nothrow_function_flags (void)
   if (DECL_REPLACEABLE_P (current_function_decl))
     return 0;
 
-  TREE_NOTHROW (current_function_decl) = 1;
+  node = cgraph_node (current_function_decl);
+  cgraph_set_nothrow_flag (node, true);
 
   /* Assume crtl->all_throwers_are_sibcalls until we encounter
      something that can throw an exception.  We specifically exempt
@@ -2785,7 +2792,7 @@ set_nothrow_function_flags (void)
   for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
     if (can_throw_external (insn))
       {
-        TREE_NOTHROW (current_function_decl) = 0;
+	cgraph_set_nothrow_flag (node, false);
 
 	if (!CALL_P (insn) || !SIBLING_CALL_P (insn))
 	  {
@@ -2798,7 +2805,7 @@ set_nothrow_function_flags (void)
        insn = XEXP (insn, 1))
     if (can_throw_external (insn))
       {
-        TREE_NOTHROW (current_function_decl) = 0;
+	cgraph_set_nothrow_flag (node, false);
 
 	if (!CALL_P (insn) || !SIBLING_CALL_P (insn))
 	  {

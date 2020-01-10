@@ -1,5 +1,5 @@
 /* Basic block reordering routines for the GNU compiler.
-   Copyright (C) 2000, 2001, 2003, 2004, 2005, 2006, 2007, 2008
+   Copyright (C) 2000, 2001, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -791,6 +791,18 @@ fixup_reorder_chain (void)
 	{
 	  if (any_condjump_p (bb_end_insn))
 	    {
+	      /* This might happen if the conditional jump has side
+		 effects and could therefore not be optimized away.
+		 Make the basic block to end with a barrier in order
+		 to prevent rtl_verify_flow_info from complaining.  */
+	      if (!e_fall)
+		{
+		  gcc_assert (!onlyjump_p (bb_end_insn)
+			      || returnjump_p (bb_end_insn));
+		  bb->il.rtl->footer = emit_barrier_after (bb_end_insn);
+		  continue;
+		}
+
 	      /* If the old fallthru is still next, nothing to do.  */
 	      if (bb->aux == e_fall->dest
 		  || e_fall->dest == EXIT_BLOCK_PTR)
@@ -854,8 +866,11 @@ fixup_reorder_chain (void)
 	    }
 	  else if (extract_asm_operands (PATTERN (bb_end_insn)) != NULL)
 	    {
-	      /* If the old fallthru is still next, nothing to do.  */
-	      if (bb->aux == e_fall->dest
+	      /* If the old fallthru is still next or if
+		 asm goto doesn't have a fallthru (e.g. when followed by
+		 __builtin_unreachable ()), nothing to do.  */
+	      if (! e_fall
+		  || bb->aux == e_fall->dest
 		  || e_fall->dest == EXIT_BLOCK_PTR)
 		continue;
 

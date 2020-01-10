@@ -72,7 +72,8 @@ lvalue_p_1 (tree ref)
 	  == REFERENCE_TYPE)
     return lvalue_p_1 (TREE_OPERAND (ref, 0));
 
-  if (TREE_CODE (TREE_TYPE (ref)) == REFERENCE_TYPE)
+  if (TREE_TYPE (ref)
+      && TREE_CODE (TREE_TYPE (ref)) == REFERENCE_TYPE)
     {
       /* unnamed rvalue references are rvalues */
       if (TYPE_REF_IS_RVALUE (TREE_TYPE (ref))
@@ -527,6 +528,8 @@ rvalue (tree expr)
 
   if (error_operand_p (expr))
     return expr;
+
+  expr = mark_rvalue_use (expr);
 
   /* [basic.lval]
 
@@ -2672,7 +2675,8 @@ stabilize_expr (tree exp, tree* initp)
   if (!TREE_SIDE_EFFECTS (exp))
     init_expr = NULL_TREE;
   else if (!real_lvalue_p (exp)
-	   || !TYPE_NEEDS_CONSTRUCTING (TREE_TYPE (exp)))
+	   || (!TYPE_NEEDS_CONSTRUCTING (TREE_TYPE (exp))
+	       && !TYPE_HAS_NONTRIVIAL_DESTRUCTOR (TREE_TYPE (exp))))
     {
       init_expr = get_target_expr (exp);
       exp = TARGET_EXPR_SLOT (init_expr);

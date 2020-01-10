@@ -62,6 +62,7 @@ extern enum rs6000_sdata_type rs6000_sdata;
 #define	TARGET_NO_PROTOTYPE	(! TARGET_PROTOTYPE)
 #define	TARGET_NO_TOC		(! TARGET_TOC)
 #define	TARGET_NO_EABI		(! TARGET_EABI)
+#define	TARGET_REGNAMES		rs6000_regnames
 
 #ifdef HAVE_AS_REL16
 #undef TARGET_SECURE_PLT
@@ -413,8 +414,6 @@ do {									\
 /* Write the extra assembler code needed to declare a function properly.
    Some svr4 assemblers need to also have something extra said about the
    function's return value.  We allow for that here.  */
-
-extern int rs6000_pic_labelno;
 
 /* Override elfos.h definition.  */
 #undef	ASM_DECLARE_FUNCTION_NAME

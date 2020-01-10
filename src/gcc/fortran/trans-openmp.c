@@ -1,5 +1,5 @@
 /* OpenMP directive translation -- generate GCC trees from gfc_code.
-   Copyright (C) 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
+   Copyright (C) 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
    Contributed by Jakub Jelinek <jakub@redhat.com>
 
 This file is part of GCC.
@@ -35,6 +35,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "trans-const.h"
 #include "arith.h"
 
+int ompws_flags;
 
 /* True if OpenMP should privatize what this DECL points to rather
    than the DECL itself.  */
@@ -56,7 +57,8 @@ gfc_omp_privatize_by_reference (const_tree decl)
       if (GFC_POINTER_TYPE_P (type))
 	return false;
 
-      if (!DECL_ARTIFICIAL (decl))
+      if (!DECL_ARTIFICIAL (decl)
+	  && TREE_CODE (TREE_TYPE (type)) != FUNCTION_TYPE)
 	return true;
 
       /* Some arrays are expanded as DECL_ARTIFICIAL pointers
@@ -74,7 +76,10 @@ gfc_omp_privatize_by_reference (const_tree decl)
 enum omp_clause_default_kind
 gfc_omp_predetermined_sharing (tree decl)
 {
-  if (DECL_ARTIFICIAL (decl) && ! GFC_DECL_RESULT (decl))
+  if (DECL_ARTIFICIAL (decl)
+      && ! GFC_DECL_RESULT (decl)
+      && ! (DECL_LANG_SPECIFIC (decl)
+	    && GFC_DECL_SAVED_DESCRIPTOR (decl)))
     return OMP_CLAUSE_DEFAULT_SHARED;
 
   /* Cray pointees shouldn't be listed in any clauses and should be
@@ -95,6 +100,15 @@ gfc_omp_predetermined_sharing (tree decl)
 	 == NULL)
     return OMP_CLAUSE_DEFAULT_SHARED;
 
+  /* Dummy procedures aren't considered variables by OpenMP, thus are
+     disallowed in OpenMP clauses.  They are represented as PARM_DECLs
+     in the middle-end, so return OMP_CLAUSE_DEFAULT_FIRSTPRIVATE here
+     to avoid complaining about their uses with default(none).  */
+  if (TREE_CODE (decl) == PARM_DECL
+      && TREE_CODE (TREE_TYPE (decl)) == POINTER_TYPE
+      && TREE_CODE (TREE_TYPE (TREE_TYPE (decl))) == FUNCTION_TYPE)
+    return OMP_CLAUSE_DEFAULT_FIRSTPRIVATE;
+
   /* COMMON and EQUIVALENCE decls are shared.  They
      are only referenced through DECL_VALUE_EXPR of the variables
      contained in them.  If those are privatized, they will not be
@@ -108,6 +122,19 @@ gfc_omp_predetermined_sharing (tree decl)
   return OMP_CLAUSE_DEFAULT_UNSPECIFIED;
 }
 
+/* Return decl that should be used when reporting DEFAULT(NONE)
+   diagnostics.  */
+
+tree
+gfc_omp_report_decl (tree decl)
+{
+  if (DECL_ARTIFICIAL (decl)
+      && DECL_LANG_SPECIFIC (decl)
+      && GFC_DECL_SAVED_DESCRIPTOR (decl))
+    return GFC_DECL_SAVED_DESCRIPTOR (decl);
+
+  return decl;
+}
 
 /* Return true if DECL in private clause needs
    OMP_CLAUSE_PRIVATE_OUTER_REF on the private clause.  */
@@ -451,13 +478,23 @@ gfc_trans_omp_array_reduction (tree c, gfc_symbol *sym, locus where)
   gfc_symbol init_val_sym, outer_sym, intrinsic_sym;
   gfc_expr *e1, *e2, *e3, *e4;
   gfc_ref *ref;
-  tree decl, backend_decl, stmt;
+  tree decl, backend_decl, stmt, type, outer_decl;
   locus old_loc = gfc_current_locus;
   const char *iname;
   gfc_try t;
 
   decl = OMP_CLAUSE_DECL (c);
   gfc_current_locus = where;
+  type = TREE_TYPE (decl);
+  outer_decl = create_tmp_var_raw (type, NULL);
+  if (TREE_CODE (decl) == PARM_DECL
+      && TREE_CODE (type) == REFERENCE_TYPE
+      && GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (type))
+      && GFC_TYPE_ARRAY_AKIND (TREE_TYPE (type)) == GFC_ARRAY_ALLOCATABLE)
+    {
+      decl = build_fold_indirect_ref (decl);
+      type = TREE_TYPE (type);
+    }
 
   /* Create a fake symbol for init value.  */
   memset (&init_val_sym, 0, sizeof (init_val_sym));
@@ -476,7 +513,9 @@ gfc_trans_omp_array_reduction (tree c, gfc_symbol *sym, locus where)
   outer_sym.attr.dummy = 0;
   outer_sym.attr.result = 0;
   outer_sym.attr.flavor = FL_VARIABLE;
-  outer_sym.backend_decl = create_tmp_var_raw (TREE_TYPE (decl), NULL);
+  outer_sym.backend_decl = outer_decl;
+  if (decl != OMP_CLAUSE_DECL (c))
+    outer_sym.backend_decl = build_fold_indirect_ref (outer_decl);
 
   /* Create fake symtrees for it.  */
   symtree1 = gfc_new_symtree (&root1, sym->name);
@@ -593,12 +632,12 @@ gfc_trans_omp_array_reduction (tree c, gfc_symbol *sym, locus where)
 
   /* Create the init statement list.  */
   pushlevel (0);
-  if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl))
-      && GFC_TYPE_ARRAY_AKIND (TREE_TYPE (decl)) == GFC_ARRAY_ALLOCATABLE)
+  if (GFC_DESCRIPTOR_TYPE_P (type)
+      && GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ALLOCATABLE)
     {
       /* If decl is an allocatable array, it needs to be allocated
 	 with the same bounds as the outer var.  */
-      tree type = TREE_TYPE (decl), rank, size, esize, ptr;
+      tree rank, size, esize, ptr;
       stmtblock_t block;
 
       gfc_start_block (&block);
@@ -634,8 +673,8 @@ gfc_trans_omp_array_reduction (tree c, gfc_symbol *sym, locus where)
 
   /* Create the merge statement list.  */
   pushlevel (0);
-  if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl))
-      && GFC_TYPE_ARRAY_AKIND (TREE_TYPE (decl)) == GFC_ARRAY_ALLOCATABLE)
+  if (GFC_DESCRIPTOR_TYPE_P (type)
+      && GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ALLOCATABLE)
     {
       /* If decl is an allocatable array, it needs to be deallocated
 	 afterwards.  */
@@ -655,7 +694,7 @@ gfc_trans_omp_array_reduction (tree c, gfc_symbol *sym, locus where)
   OMP_CLAUSE_REDUCTION_MERGE (c) = stmt;
 
   /* And stick the placeholder VAR_DECL into the clause as well.  */
-  OMP_CLAUSE_REDUCTION_PLACEHOLDER (c) = outer_sym.backend_decl;
+  OMP_CLAUSE_REDUCTION_PLACEHOLDER (c) = outer_decl;
 
   gfc_current_locus = old_loc;
 
@@ -1155,6 +1194,7 @@ gfc_trans_omp_do (gfc_code *code, stmtblock_t *pblock,
     {
       int simple = 0;
       int dovar_found = 0;
+      tree dovar_decl;
 
       if (clauses)
 	{
@@ -1195,19 +1235,27 @@ gfc_trans_omp_do (gfc_code *code, stmtblock_t *pblock,
       gfc_conv_expr_val (&se, code->ext.iterator->step);
       gfc_add_block_to_block (pblock, &se.pre);
       step = gfc_evaluate_now (se.expr, pblock);
+      dovar_decl = dovar;
 
       /* Special case simple loops.  */
-      if (integer_onep (step))
-	simple = 1;
-      else if (tree_int_cst_equal (step, integer_minus_one_node))
-	simple = -1;
+      if (TREE_CODE (dovar) == VAR_DECL)
+	{
+	  if (integer_onep (step))
+	    simple = 1;
+	  else if (tree_int_cst_equal (step, integer_minus_one_node))
+	    simple = -1;
+	}
+      else
+	dovar_decl
+	  = gfc_trans_omp_variable (code->ext.iterator->var->symtree->n.sym);
 
       /* Loop body.  */
       if (simple)
 	{
 	  TREE_VEC_ELT (init, i) = build2_v (MODIFY_EXPR, dovar, from);
-	  TREE_VEC_ELT (cond, i) = fold_build2 (simple > 0 ? LE_EXPR : GE_EXPR,
-						boolean_type_node, dovar, to);
+	  /* The condition should not be folded.  */
+	  TREE_VEC_ELT (cond, i) = build2 (simple > 0 ? LE_EXPR : GE_EXPR,
+					   boolean_type_node, dovar, to);
 	  TREE_VEC_ELT (incr, i) = fold_build2 (PLUS_EXPR, type, dovar, step);
 	  TREE_VEC_ELT (incr, i) = fold_build2 (MODIFY_EXPR, type, dovar,
 						TREE_VEC_ELT (incr, i));
@@ -1228,8 +1276,9 @@ gfc_trans_omp_do (gfc_code *code, stmtblock_t *pblock,
 	  count = gfc_create_var (type, "count");
 	  TREE_VEC_ELT (init, i) = build2_v (MODIFY_EXPR, count,
 					     build_int_cst (type, 0));
-	  TREE_VEC_ELT (cond, i) = fold_build2 (LT_EXPR, boolean_type_node,
-						count, tmp);
+	  /* The condition should not be folded.  */
+	  TREE_VEC_ELT (cond, i) = build2 (LT_EXPR, boolean_type_node,
+					   count, tmp);
 	  TREE_VEC_ELT (incr, i) = fold_build2 (PLUS_EXPR, type, count,
 						build_int_cst (type, 1));
 	  TREE_VEC_ELT (incr, i) = fold_build2 (MODIFY_EXPR, type,
@@ -1244,7 +1293,7 @@ gfc_trans_omp_do (gfc_code *code, stmtblock_t *pblock,
       if (!dovar_found)
 	{
 	  tmp = build_omp_clause (OMP_CLAUSE_PRIVATE);
-	  OMP_CLAUSE_DECL (tmp) = dovar;
+	  OMP_CLAUSE_DECL (tmp) = dovar_decl;
 	  omp_clauses = gfc_trans_add_clause (tmp, omp_clauses);
 	}
       else if (dovar_found == 2)
@@ -1264,7 +1313,7 @@ gfc_trans_omp_do (gfc_code *code, stmtblock_t *pblock,
 	      tmp = fold_build2 (MODIFY_EXPR, type, dovar, tmp);
 	      for (c = omp_clauses; c ; c = OMP_CLAUSE_CHAIN (c))
 		if (OMP_CLAUSE_CODE (c) == OMP_CLAUSE_LASTPRIVATE
-		    && OMP_CLAUSE_DECL (c) == dovar)
+		    && OMP_CLAUSE_DECL (c) == dovar_decl)
 		  {
 		    OMP_CLAUSE_LASTPRIVATE_STMT (c) = tmp;
 		    break;
@@ -1274,10 +1323,10 @@ gfc_trans_omp_do (gfc_code *code, stmtblock_t *pblock,
 	    {
 	      for (c = par_clauses; c ; c = OMP_CLAUSE_CHAIN (c))
 		if (OMP_CLAUSE_CODE (c) == OMP_CLAUSE_LASTPRIVATE
-		    && OMP_CLAUSE_DECL (c) == dovar)
+		    && OMP_CLAUSE_DECL (c) == dovar_decl)
 		  {
 		    tree l = build_omp_clause (OMP_CLAUSE_LASTPRIVATE);
-		    OMP_CLAUSE_DECL (l) = dovar;
+		    OMP_CLAUSE_DECL (l) = dovar_decl;
 		    OMP_CLAUSE_CHAIN (l) = omp_clauses;
 		    OMP_CLAUSE_LASTPRIVATE_STMT (l) = tmp;
 		    omp_clauses = l;
@@ -1544,8 +1593,162 @@ gfc_trans_omp_taskwait (void)
 static tree
 gfc_trans_omp_workshare (gfc_code *code, gfc_omp_clauses *clauses)
 {
-  /* XXX */
-  return gfc_trans_omp_single (code, clauses);
+  tree res, tmp, stmt;
+  stmtblock_t block, *pblock = NULL;
+  stmtblock_t singleblock;
+  int saved_ompws_flags;
+  bool singleblock_in_progress = false;
+  /* True if previous gfc_code in workshare construct is not workshared.  */
+  bool prev_singleunit;
+
+  code = code->block->next;
+
+  pushlevel (0);
+
+  if (!code)
+    return build_empty_stmt ();
+
+  gfc_start_block (&block);
+  pblock = &block;
+
+  ompws_flags = OMPWS_WORKSHARE_FLAG;
+  prev_singleunit = false;
+
+  /* Translate statements one by one to trees until we reach
+     the end of the workshare construct.  Adjacent gfc_codes that
+     are a single unit of work are clustered and encapsulated in a
+     single OMP_SINGLE construct.  */
+  for (; code; code = code->next)
+    {
+      if (code->here != 0)
+	{
+	  res = gfc_trans_label_here (code);
+	  gfc_add_expr_to_block (pblock, res);
+	}
+
+      /* No dependence analysis, use for clauses with wait.
+	 If this is the last gfc_code, use default omp_clauses.  */
+      if (code->next == NULL && clauses->nowait)
+	ompws_flags |= OMPWS_NOWAIT;
+
+      /* By default, every gfc_code is a single unit of work.  */
+      ompws_flags |= OMPWS_CURR_SINGLEUNIT;
+      ompws_flags &= ~OMPWS_SCALARIZER_WS;
+
+      switch (code->op)
+	{
+	case EXEC_NOP:
+	  res = NULL_TREE;
+	  break;
+
+	case EXEC_ASSIGN:
+	  res = gfc_trans_assign (code);
+	  break;
+
+	case EXEC_POINTER_ASSIGN:
+	  res = gfc_trans_pointer_assign (code);
+	  break;
+
+	case EXEC_INIT_ASSIGN:
+	  res = gfc_trans_init_assign (code);
+	  break;
+
+	case EXEC_FORALL:
+	  res = gfc_trans_forall (code);
+	  break;
+
+	case EXEC_WHERE:
+	  res = gfc_trans_where (code);
+	  break;
+
+	case EXEC_OMP_ATOMIC:
+	  res = gfc_trans_omp_directive (code);
+	  break;
+
+	case EXEC_OMP_PARALLEL:
+	case EXEC_OMP_PARALLEL_DO:
+	case EXEC_OMP_PARALLEL_SECTIONS:
+	case EXEC_OMP_PARALLEL_WORKSHARE:
+	case EXEC_OMP_CRITICAL:
+	  saved_ompws_flags = ompws_flags;
+	  ompws_flags = 0;
+	  res = gfc_trans_omp_directive (code);
+	  ompws_flags = saved_ompws_flags;
+	  break;
+	
+	default:
+	  internal_error ("gfc_trans_omp_workshare(): Bad statement code");
+	}
+
+      gfc_set_backend_locus (&code->loc);
+
+      if (res != NULL_TREE && ! IS_EMPTY_STMT (res))
+	{
+	  if (TREE_CODE (res) == STATEMENT_LIST)
+	    tree_annotate_all_with_location (&res, input_location);
+	  else
+	    SET_EXPR_LOCATION (res, input_location);
+
+	  if (prev_singleunit)
+	    {
+	      if (ompws_flags & OMPWS_CURR_SINGLEUNIT)
+		/* Add current gfc_code to single block.  */
+		gfc_add_expr_to_block (&singleblock, res);
+	      else
+		{
+		  /* Finish single block and add it to pblock.  */
+		  tmp = gfc_finish_block (&singleblock);
+		  tmp = build2 (OMP_SINGLE, void_type_node, tmp, NULL_TREE);
+		  gfc_add_expr_to_block (pblock, tmp);
+		  /* Add current gfc_code to pblock.  */
+		  gfc_add_expr_to_block (pblock, res);
+		  singleblock_in_progress = false;
+		}
+	    }
+	  else
+	    {
+	      if (ompws_flags & OMPWS_CURR_SINGLEUNIT)
+		{
+		  /* Start single block.  */
+		  gfc_init_block (&singleblock);
+		  gfc_add_expr_to_block (&singleblock, res);
+		  singleblock_in_progress = true;
+		}
+	      else
+		/* Add the new statement to the block.  */
+		gfc_add_expr_to_block (pblock, res);
+	    }
+	  prev_singleunit = (ompws_flags & OMPWS_CURR_SINGLEUNIT) != 0;
+	}
+    }
+
+  /* Finish remaining SINGLE block, if we were in the middle of one.  */
+  if (singleblock_in_progress)
+    {
+      /* Finish single block and add it to pblock.  */
+      tmp = gfc_finish_block (&singleblock);
+      tmp = build2 (OMP_SINGLE, void_type_node, tmp,
+		    clauses->nowait
+		    ? build_omp_clause (OMP_CLAUSE_NOWAIT) : NULL_TREE);
+      gfc_add_expr_to_block (pblock, tmp);
+    }
+
+  stmt = gfc_finish_block (pblock);
+  if (TREE_CODE (stmt) != BIND_EXPR)
+    {
+      if (!IS_EMPTY_STMT (stmt))
+	{
+	  tree bindblock = poplevel (1, 0, 0);
+	  stmt = build3_v (BIND_EXPR, NULL, stmt, bindblock);
+	}
+      else
+	poplevel (0, 0, 0);
+    }
+  else
+    poplevel (0, 0, 0);
+
+  ompws_flags = 0;
+  return stmt;
 }
 
 tree

@@ -1,5 +1,5 @@
 /* Data structure definitions for a generic GCC target.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify it
@@ -90,6 +90,9 @@ struct _dep;
 
 /* This is defined in ddg.h .  */
 struct ddg;
+
+/* This is defined in cfgloop.h .  */
+struct loop;
 
 struct gcc_target
 {
@@ -222,6 +225,10 @@ struct gcc_target
     /* Output any boilerplate text needed at the end of a
        translation unit.  */
     void (*file_end) (void);
+
+    /* Output any boilerplace text needed at the end of a
+       translation unit before debug and unwind info is emitted.  */
+    void (*code_end) (void);
 
     /* Output an assembler pseudo-op to declare a library function name
        external.  */
@@ -450,7 +457,7 @@ struct gcc_target
 
     /* Returns a code for builtin that realizes vectorized version of
        function, or NULL_TREE if not available.  */
-    tree (* builtin_vectorized_function) (unsigned, tree, tree);
+    tree (* builtin_vectorized_function) (tree, tree, tree);
 
     /* Returns a code for builtin that realizes vectorized version of
        conversion, or NULL_TREE if not available.  */
@@ -589,6 +596,9 @@ struct gcc_target
      function.  AFTER_PE_GEN is true if prologues and epilogues have
      already been generated.  */
   bool (* branch_target_register_callee_saved) (bool after_pe_gen);
+
+  /* Return a new value for loop unroll size.  */
+  unsigned (* loop_unroll_adjust) (unsigned nunroll, struct loop *loop);
 
   /* True if the constant X cannot be placed in the constant pool.  */
   bool (* cannot_force_const_mem) (rtx);

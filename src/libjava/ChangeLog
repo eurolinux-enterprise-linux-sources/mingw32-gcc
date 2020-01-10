@@ -1,3 +1,116 @@
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2011-01-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2011-01-06  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* testsuite/libjava.jni/jni.exp (gcj_jni_get_cxxflags_invocation):
+	Add -shared-libgcc to cxxflags for *-*-solaris*.
+	Remove -lsocket.
+
+2010-12-13  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-11-09  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* testsuite/libjava.jvmti/jvmti.exp (gcj_jvmti_compile_cxx_to_o):
+	Add -pthread on alpha*-dec-osf*.
+	* testsuite/libjava.jvmti/jvmti-interp.exp
+	(gcj_jni_compile_c_to_so): Likewise.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-06-11  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-05-25  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR libgcj/44216
+	* configure.ac (libgcj_cv_exidx): Enable AC_LANG_WERROR.
+	Save and restore werror flag.
+	* configure: Regenerate.
+
+2010-05-25  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure.ac: Redirect grep stdout, stderr to /dev/null instead
+	of grep -q.
+	Use -- instead of grep -e.
+	* configure: Regenerate.
+
+2010-04-29  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/43620
+	* configure.ac (AM_INIT_AUTOMAKE): Add no-dist option.
+	* Makefile.in: Regenerated.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-04-19  Andrew Haley  <aph@redhat.com>
+
+	PR libgcj/40860
+	* configure.ac: Handle --no-merge-exidx-entries.
+
+2010-04-08  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
+
+	Backport:
+	2009-12-09  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
+
+	* include/pa-signal.h: Do not include ucontext.h.
+	(SIGNAL_HANDLER): Add __attribute__ ((unused)) to signal handler
+	arguments.
+	(MAKE_THROW_FRAME): Do not adjust program counter.
+	* include/hppa-signal.h: Do not include sys/types.h, sys/syscall.h and
+	unistd.h.
+	(MAKE_THROW_FRAME): Do not adjust program counter.
+	(HANDLE_FPE): Define.
+	(INIT_SEGV, INIT_FPE): Revise indentation.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2010-01-12  Matthias Klose  <doko@ubuntu.com>
+
+	PR libjava/40859, backported from:
+
+	2009-08-12  Andrew Haley  <aph@redhat.com>
+	* configure.host (arm*-linux*): Add -Wno-abi to cxxflags.
+	(testsuite/libjava.jvmti/jvmti-interp.exp): Likewise.
+	(testsuite/libjava.jvmti/jvmti.exp): Likewise.
+	(testsuite/libjava.jni/jni.exp): Likewise.
+
+2010-01-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* gnu/gcj/convert/Convert.java (version): Update copyright notice
+	dates.
+	* gnu/gcj/tools/gcj_dbtool/Main.java (main): Likewise.
+
+2009-12-09  Bryce McKinlay  <bmckinlay@gmail.com>
+
+	PR java/41991
+	* configure.ac (SYSTEMSPEC): Pass -allow_stack_execute to Darwin
+	linker.
+	* Makefile.am (gij_LDFLAGS): Remove extra_gij_ldflags.
+	* configure: Regenerate.
+	* Makefile.in: Regenerate.
+
+2009-11-17  Andrew Haley  <aph@redhat.com>
+
+	* posix-threads.cc (park): Rewrite code to handle time.
+	Move mutex lock before the call to compare_and_swap to avoid a
+	race condition.
+	Add some assertions.
+	(unpark): Add an assertion.
+	(init): Move here from posix-threads.h.
+	* include/posix-threads.h (destroy): removed.
+
 2009-10-15  Release Manager
 
 	* GCC 4.4.2 released.

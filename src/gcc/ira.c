@@ -1,5 +1,5 @@
 /* Integrated Register Allocator (IRA) entry point.
-   Copyright (C) 2006, 2007, 2008, 2009
+   Copyright (C) 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
@@ -2245,6 +2245,22 @@ no_equiv (rtx reg, const_rtx store ATTRIBUTE_UNUSED, void *data ATTRIBUTE_UNUSED
     }
 }
 
+/* In DEBUG_INSN location adjust REGs from CLEARED_REGS bitmap to the
+   equivalent replacement.  */
+
+static rtx
+adjust_cleared_regs (rtx loc, const_rtx old_rtx ATTRIBUTE_UNUSED, void *data)
+{
+  if (REG_P (loc))
+    {
+      bitmap cleared_regs = (bitmap) data;
+      if (bitmap_bit_p (cleared_regs, REGNO (loc)))
+	return simplify_replace_fn_rtx (*reg_equiv[REGNO (loc)].src_p,
+					NULL_RTX, adjust_cleared_regs, data);
+    }
+  return NULL_RTX;
+}
+
 /* Nonzero if we recorded an equivalence for a LABEL_REF.  */
 static int recorded_label_ref;
 
@@ -2680,13 +2696,29 @@ update_equiv_regs (void)
     }
 
   if (!bitmap_empty_p (cleared_regs))
-    FOR_EACH_BB (bb)
-      {
-	bitmap_and_compl_into (DF_LIVE_IN (bb), cleared_regs);
-	bitmap_and_compl_into (DF_LIVE_OUT (bb), cleared_regs);
-	bitmap_and_compl_into (DF_LR_IN (bb), cleared_regs);
-	bitmap_and_compl_into (DF_LR_OUT (bb), cleared_regs);
-      }
+    {
+      FOR_EACH_BB (bb)
+	{
+	  bitmap_and_compl_into (DF_LIVE_IN (bb), cleared_regs);
+	  bitmap_and_compl_into (DF_LIVE_OUT (bb), cleared_regs);
+	  bitmap_and_compl_into (DF_LR_IN (bb), cleared_regs);
+	  bitmap_and_compl_into (DF_LR_OUT (bb), cleared_regs);
+	}
+
+      /* Last pass - adjust debug insns referencing cleared regs.  */
+      if (MAY_HAVE_DEBUG_INSNS)
+	for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
+	  if (DEBUG_INSN_P (insn))
+	    {
+	      rtx old_loc = INSN_VAR_LOCATION_LOC (insn);
+	      INSN_VAR_LOCATION_LOC (insn)
+		= simplify_replace_fn_rtx (old_loc, NULL_RTX,
+					   adjust_cleared_regs,
+					   (void *) cleared_regs);
+	      if (old_loc != INSN_VAR_LOCATION_LOC (insn))
+		df_insn_rescan (insn);
+	    }
+    }
 
   BITMAP_FREE (cleared_regs);
 
@@ -2726,8 +2758,7 @@ pseudo_for_reload_consideration_p (int regno)
 {
   /* Consider spilled pseudos too for IRA because they still have a
      chance to get hard-registers in the reload when IRA is used.  */
-  return (reg_renumber[regno] >= 0
-	  || (ira_conflicts_p && flag_ira_share_spill_slots));
+  return (reg_renumber[regno] >= 0 || ira_conflicts_p);
 }
 
 /* Init LIVE_SUBREGS[ALLOCNUM] and LIVE_SUBREGS_USED[ALLOCNUM] using
@@ -3058,6 +3089,9 @@ ira (FILE *f)
 
   timevar_push (TV_IRA);
 
+  if (flag_caller_saves)
+    init_caller_save ();
+
   if (flag_ira_verbose < 10)
     {
       internal_flag_ira_verbose = flag_ira_verbose;
@@ -3144,9 +3178,12 @@ ira (FILE *f)
   ira_assert (ira_conflicts_p || !loops_p);
 
   saved_flag_ira_share_spill_slots = flag_ira_share_spill_slots;
-  if (too_high_register_pressure_p ())
+  if (too_high_register_pressure_p () || cfun->calls_setjmp)
     /* It is just wasting compiler's time to pack spilled pseudos into
-       stack slots in this case -- prohibit it.  */ 
+       stack slots in this case -- prohibit it.  We also do this if
+       there is setjmp call because a variable not modified between
+       setjmp and longjmp the compiler is required to preserve its
+       value and sharing slots does not guarantee it.  */
     flag_ira_share_spill_slots = FALSE;
 
   ira_color ();

@@ -1,6 +1,6 @@
 /* Expands front end tree to back end RTL for GCC
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -771,6 +771,10 @@ expand_asm_operands (tree string, tree outputs, tree inputs,
 
   /* Second pass evaluates arguments.  */
 
+  /* Make sure stack is consistent for asm goto.  */
+  if (nlabels > 0)
+    do_pending_stack_adjust ();
+
   ninout = 0;
   for (i = 0, tail = outputs; tail; tail = TREE_CHAIN (tail), i++)
     {
@@ -1092,10 +1096,11 @@ expand_asm_expr (tree exp)
   int noutputs, i;
   tree outputs, tail;
   tree *o;
+  location_t locus = EXPR_LOCATION (exp);
 
   if (ASM_INPUT_P (exp))
     {
-      expand_asm_loc (ASM_STRING (exp), ASM_VOLATILE_P (exp), input_location);
+      expand_asm_loc (ASM_STRING (exp), ASM_VOLATILE_P (exp), locus);
       return;
     }
 
@@ -1112,7 +1117,7 @@ expand_asm_expr (tree exp)
      OUTPUTS some trees for where the values were actually stored.  */
   expand_asm_operands (ASM_STRING (exp), outputs, ASM_INPUTS (exp),
 		       ASM_CLOBBERS (exp), ASM_LABELS (exp),
-		       ASM_VOLATILE_P (exp), input_location);
+		       ASM_VOLATILE_P (exp), locus);
 
   /* Copy all the intermediate outputs into the specified outputs.  */
   for (i = 0, tail = outputs; tail; tail = TREE_CHAIN (tail), i++)
@@ -1268,7 +1273,7 @@ resolve_asm_operand_names (tree string, tree outputs, tree inputs, tree labels)
 	break;
       else
 	{
-	  c += 1;
+	  c += 1 + (c[1] == '%');
 	  continue;
 	}
     }
@@ -1290,7 +1295,7 @@ resolve_asm_operand_names (tree string, tree outputs, tree inputs, tree labels)
 	    p += 2;
 	  else
 	    {
-	      p += 1;
+	      p += 1 + (p[1] == '%');
 	      continue;
 	    }
 
@@ -1372,6 +1377,12 @@ expand_expr_stmt (tree exp)
 {
   rtx value;
   tree type;
+
+  if (cfun && EXPR_HAS_LOCATION (exp))
+    {
+      set_curr_insn_source_location (EXPR_LOCATION (exp));
+      set_curr_insn_block (TREE_BLOCK (exp));
+    }
 
   value = expand_expr (exp, const0_rtx, VOIDmode, EXPAND_NORMAL);
   type = TREE_TYPE (exp);
@@ -2496,7 +2507,7 @@ do_jump_if_equal (enum machine_mode mode, rtx op0, rtx op1, rtx label,
 		  int unsignedp)
 {
   do_compare_rtx_and_jump (op0, op1, EQ, unsignedp, mode,
-			   NULL_RTX, NULL_RTX, label);
+			   NULL_RTX, NULL_RTX, label, -1);
 }
 
 /* Not all case values are encountered equally.  This function

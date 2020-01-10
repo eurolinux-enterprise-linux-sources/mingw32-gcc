@@ -631,7 +631,8 @@ typedef struct
     use_assoc:1,		/* Symbol has been use-associated.  */
     use_only:1,			/* Symbol has been use-associated, with ONLY.  */
     use_rename:1,		/* Symbol has been use-associated and renamed.  */
-    imported:1;			/* Symbol has been associated by IMPORT.  */
+    imported:1,			/* Symbol has been associated by IMPORT.  */
+    host_assoc:1;		/* Symbol has been host associated.  */ 
 
   unsigned in_namelist:1, in_common:1, in_equivalence:1;
   unsigned function:1, subroutine:1, procedure:1;
@@ -1259,7 +1260,7 @@ typedef struct gfc_namespace
   struct gfc_code *code;
 
   /* Points to the equivalences set up in this namespace.  */
-  struct gfc_equiv *equiv;
+  struct gfc_equiv *equiv, *old_equiv;
 
   /* Points to the equivalence groups produced by trans_common.  */
   struct gfc_equiv_list *equiv_lists;
@@ -2400,6 +2401,7 @@ void gfc_free_forall_iterator (gfc_forall_iterator *);
 void gfc_free_alloc_list (gfc_alloc *);
 void gfc_free_namelist (gfc_namelist *);
 void gfc_free_equiv (gfc_equiv *);
+void gfc_free_equiv_until (gfc_equiv *, gfc_equiv *);
 void gfc_free_data (gfc_data *);
 void gfc_free_case_list (gfc_case *);
 
@@ -2449,6 +2451,8 @@ gfc_try gfc_check_assign_symbol (gfc_symbol *, gfc_expr *);
 
 gfc_expr *gfc_default_initializer (gfc_typespec *);
 gfc_expr *gfc_get_variable_expr (gfc_symtree *);
+
+gfc_array_spec *gfc_get_full_arrayspec_from_expr (gfc_expr *expr);
 
 bool gfc_traverse_expr (gfc_expr *, gfc_symbol *,
 			bool (*)(gfc_expr *, gfc_symbol *, int*),

@@ -538,7 +538,7 @@ roundl(long double x)
   if (x > DBL_MAX || x < -DBL_MAX)
     {
 #ifdef HAVE_NEXTAFTERL
-      static long double prechalf = nexafterl (0.5L, LDBL_MAX);
+      long double prechalf = nextafterl (0.5L, LDBL_MAX);
 #else
       static long double prechalf = 0.5L;
 #endif
@@ -566,16 +566,16 @@ round(double x)
 
    if (x >= 0.0) 
     {
-      t = ceil(x);
-      if (t - x > 0.5)
-	t -= 1.0;
+      t = floor(x);
+      if (t - x <= -0.5)
+	t += 1.0;
       return (t);
     } 
    else 
     {
-      t = ceil(-x);
-      if (t + x > 0.5)
-	t -= 1.0;
+      t = floor(-x);
+      if (t + x <= -0.5)
+	t += 1.0;
       return (-t);
     }
 }
@@ -595,16 +595,16 @@ roundf(float x)
 
    if (x >= 0.0) 
     {
-      t = ceilf(x);
-      if (t - x > 0.5)
-	t -= 1.0;
+      t = floorf(x);
+      if (t - x <= -0.5)
+	t += 1.0;
       return (t);
     } 
    else 
     {
-      t = ceilf(-x);
-      if (t + x > 0.5)
-	t -= 1.0;
+      t = floorf(-x);
+      if (t + x <= -0.5)
+	t += 1.0;
       return (-t);
     }
 }

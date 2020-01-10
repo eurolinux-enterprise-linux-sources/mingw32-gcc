@@ -3280,6 +3280,12 @@ cp_parser_primary_expression (cp_parser *parser,
 	       `&A::B' might be a pointer-to-member, but `&(A::B)' is
 	       not.  */
 	    finish_parenthesized_expr (expr);
+	    /* DR 705: Wrapping an unqualified name in parentheses
+	       suppresses arg-dependent lookup.  We want to pass back
+	       CP_ID_KIND_QUALIFIED for suppressing vtable lookup
+	       (c++/37862), but none of the others.  */
+	    if (*idk != CP_ID_KIND_QUALIFIED)
+	      *idk = CP_ID_KIND_NONE;
 	  }
 	/* The `>' token might be the end of a template-id or
 	   template-parameter-list now.  */
@@ -13385,11 +13391,13 @@ cp_parser_direct_declarator (cp_parser* parser,
 		bounds = fold_non_dependent_expr (bounds);
 	      /* Normally, the array bound must be an integral constant
 		 expression.  However, as an extension, we allow VLAs
-		 in function scopes.  */
-	      else if (!parser->in_function_body)
+		 in function scopes as long as they aren't part of a
+		 parameter declaration.  */
+	      else if (!parser->in_function_body
+		       || current_binding_level->kind == sk_function_parms)
 		{
-		  error ("%Harray bound is not an integer constant",
-			 &token->location);
+		  cp_parser_error (parser,
+				   "array bound is not an integer constant");
 		  bounds = error_mark_node;
 		}
 	      else if (processing_template_decl && !error_operand_p (bounds))
@@ -14437,6 +14445,7 @@ cp_parser_parameter_declaration (cp_parser *parser,
 			 the default argument; otherwise the default
 			 argument continues.  */
 		      bool error = false;
+		      tree t;
 
 		      /* Set ITALP so cp_parser_parameter_declaration_list
 			 doesn't decide to commit to this parse.  */
@@ -14445,7 +14454,11 @@ cp_parser_parameter_declaration (cp_parser *parser,
 
 		      cp_parser_parse_tentatively (parser);
 		      cp_lexer_consume_token (parser->lexer);
+		      begin_scope (sk_function_parms, NULL_TREE);
 		      cp_parser_parameter_declaration_list (parser, &error);
+		      for (t = current_binding_level->names; t; t = TREE_CHAIN (t))
+			pop_binding (DECL_NAME (t), t);
+		      leave_scope ();
 		      if (!cp_parser_error_occurred (parser) && !error)
 			done = true;
 		      cp_parser_abort_tentative_parse (parser);
@@ -21100,6 +21113,32 @@ cp_parser_omp_atomic (cp_parser *parser, cp_token *pragma_tok)
       rhs = integer_one_node;
       break;
 
+    case COMPOUND_EXPR:
+      if (TREE_CODE (TREE_OPERAND (lhs, 0)) == SAVE_EXPR
+	 && TREE_CODE (TREE_OPERAND (lhs, 1)) == COMPOUND_EXPR
+	 && TREE_CODE (TREE_OPERAND (TREE_OPERAND (lhs, 1), 0)) == MODIFY_EXPR
+	 && TREE_OPERAND (TREE_OPERAND (lhs, 1), 1) == TREE_OPERAND (lhs, 0)
+	 && TREE_CODE (TREE_TYPE (TREE_OPERAND (TREE_OPERAND
+					     (TREE_OPERAND (lhs, 1), 0), 0)))
+	    == BOOLEAN_TYPE)
+       /* Undo effects of boolean_increment for post {in,de}crement.  */
+       lhs = TREE_OPERAND (TREE_OPERAND (lhs, 1), 0);
+      /* FALLTHRU */
+    case MODIFY_EXPR:
+      if (TREE_CODE (lhs) == MODIFY_EXPR
+	 && TREE_CODE (TREE_TYPE (TREE_OPERAND (lhs, 0))) == BOOLEAN_TYPE)
+       {
+	 /* Undo effects of boolean_increment.  */
+	 if (integer_onep (TREE_OPERAND (lhs, 1)))
+	   {
+	     /* This is pre or post increment.  */
+	     rhs = TREE_OPERAND (lhs, 1);
+	     lhs = TREE_OPERAND (lhs, 0);
+	     code = NOP_EXPR;
+	     break;
+	   }
+       }
+      /* FALLTHRU */
     default:
       switch (cp_lexer_peek_token (parser->lexer)->type)
 	{

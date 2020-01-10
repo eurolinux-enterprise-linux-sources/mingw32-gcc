@@ -5600,12 +5600,13 @@ If this hook is defined, the autovectorizer will use the
 conversion. Otherwise, it will return @code{NULL_TREE}.
 @end deftypefn
 
-@deftypefn {Target Hook} tree TARGET_VECTORIZE_BUILTIN_VECTORIZED_FUNCTION (enum built_in_function @var{code}, tree @var{vec_type_out}, tree @var{vec_type_in})
-This hook should return the decl of a function that implements the vectorized
-variant of the builtin function with builtin function code @var{code} or
-@code{NULL_TREE} if such a function is not available.  The return type of
-the vectorized function shall be of vector type @var{vec_type_out} and the
-argument types should be @var{vec_type_in}.
+@deftypefn {Target Hook} tree TARGET_VECTORIZE_BUILTIN_VECTORIZED_FUNCTION (tree @var{fndecl}, tree @var{vec_type_out}, tree @var{vec_type_in})
+This hook should return the decl of a function that implements the
+vectorized variant of the builtin function with builtin function code
+@var{code} or @code{NULL_TREE} if such a function is not available.
+The value of @var{fndecl} is the builtin function declaration.  The
+return type of the vectorized function shall be of vector type
+@var{vec_type_out} and the argument types should be @var{vec_type_in}.
 @end deftypefn
 
 @node Anchored Addresses
@@ -6941,6 +6942,14 @@ should define @code{TARGET_ASM_FILE_END} to this function.  If you
 need to do other things in that hook, have your hook function call
 this function.
 @end deftypefun
+
+@deftypefn {Target Hook} void TARGET_ASM_CODE_END (void)
+Output to @code{asm_out_file} any text which is needed before emitting
+unwind info and debug info at the end of a file.  Some targets emit
+here PIC setup thunks that cannot be emitted at the end of file,
+because they couldn't have unwind info then.  The default is to output
+nothing.
+@end deftypefn
 
 @defmac ASM_COMMENT_START
 A C string constant describing how to begin a comment in the target
@@ -10515,6 +10524,15 @@ epilogues have already been generated.  Note, even if you only return
 true when @var{after_prologue_epilogue_gen} is false, you still are likely
 to have to make special provisions in @code{INITIAL_ELIMINATION_OFFSET}
 to reserve space for caller-saved target registers.
+@end deftypefn
+
+@deftypefn {Target Hook} unsigned TARGET_LOOP_UNROLL_ADJUST (unsigned @var{nunroll}, struct loop *@var{loop})
+This target hook returns a new value for the number of times @var{loop}
+should be unrolled. The parameter @var{nunroll} is the number of times
+the loop is to be unrolled. The parameter @var{loop} is a pointer to
+the loop, which is going to be checked for unrolling. This target hook
+is required only when the target has special constraints like maximum
+number of memory accesses.
 @end deftypefn
 
 @defmac POWI_MAX_MULTS

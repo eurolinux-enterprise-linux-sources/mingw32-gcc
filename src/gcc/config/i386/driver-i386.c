@@ -261,7 +261,8 @@ enum cache_type
 };
 
 static void
-detect_caches_cpuid4 (struct cache_desc *level1, struct cache_desc *level2)
+detect_caches_cpuid4 (struct cache_desc *level1, struct cache_desc *level2,
+		      struct cache_desc *level3)
 {
   struct cache_desc *cache;
 
@@ -286,6 +287,9 @@ detect_caches_cpuid4 (struct cache_desc *level1, struct cache_desc *level2)
 	      case 2:
 		cache = level2;
 		break;
+	      case 3:
+		cache = level3;
+		break;
 	      default:
 		cache = NULL;
 	      }
@@ -300,7 +304,7 @@ detect_caches_cpuid4 (struct cache_desc *level1, struct cache_desc *level2)
 
 		cache->sizekb = (cache->assoc * part
 				 * cache->line * sets) / 1024;
-	      }	       
+	      }
 	  }
 	default:
 	  break;
@@ -311,12 +315,13 @@ detect_caches_cpuid4 (struct cache_desc *level1, struct cache_desc *level2)
 /* Returns the description of caches for an Intel processor.  */
 
 static const char *
-detect_caches_intel (bool xeon_mp, unsigned max_level, unsigned max_ext_level)
+detect_caches_intel (bool xeon_mp, unsigned max_level,
+		     unsigned max_ext_level, unsigned *l2sizekb)
 {
-  struct cache_desc level1 = {0, 0, 0}, level2 = {0, 0, 0};
+  struct cache_desc level1 = {0, 0, 0}, level2 = {0, 0, 0}, level3 = {0, 0, 0};
 
   if (max_level >= 4)
-    detect_caches_cpuid4 (&level1, &level2);
+    detect_caches_cpuid4 (&level1, &level2, &level3);
   else if (max_level >= 2)
     detect_caches_cpuid2 (xeon_mp, &level1, &level2);
   else
@@ -325,10 +330,17 @@ detect_caches_intel (bool xeon_mp, unsigned max_level, unsigned max_ext_level)
   if (level1.sizekb == 0)
     return "";
 
+  /* Let the L3 replace the L2. This assumes inclusive caches
+     and single threaded program for now. */
+  if (level3.sizekb)
+    level2 = level3;
+
   /* Intel CPUs are equipped with AMD style L2 cache info.  Try this
      method if other methods fail to provide L2 cache parameters.  */
   if (level2.sizekb == 0 && max_ext_level >= 0x80000006)
     detect_l2_cache (&level2);
+
+  *l2sizekb = level2.sizekb;
 
   return describe_cache (level1, level2);
 }
@@ -380,9 +392,13 @@ const char *host_detect_local_cpu (int argc, const char **argv)
   unsigned int has_longmode = 0, has_3dnowp = 0, has_3dnow = 0;
   unsigned int has_movbe = 0, has_sse4_1 = 0, has_sse4_2 = 0;
   unsigned int has_popcnt = 0, has_aes = 0, has_avx = 0;
-  unsigned int has_pclmul = 0;
+  unsigned int has_pclmul = 0, has_abm = 0, has_lwp = 0;
+  unsigned int has_fma4 = 0, has_xop = 0;
+  unsigned int has_bmi = 0, has_tbm = 0;
 
   bool arch;
+
+  unsigned int l2sizekb = 0;
 
   if (argc < 1)
     return NULL;
@@ -441,10 +457,19 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 
       has_lahf_lm = ecx & bit_LAHF_LM;
       has_sse4a = ecx & bit_SSE4a;
+      has_abm = ecx & bit_ABM;
+      has_lwp = ecx & bit_LWP;
+      has_fma4 = ecx & bit_FMA4;
+      has_xop = ecx & bit_XOP;
+      has_tbm = ecx & bit_TBM;
 
       has_longmode = edx & bit_LM;
       has_3dnowp = edx & bit_3DNOWP;
       has_3dnow = edx & bit_3DNOW;
+
+      __cpuid (0x7, eax, ebx, ecx, edx);
+
+      has_bmi = ebx & bit_BMI;
     }
 
   if (!arch)
@@ -454,7 +479,8 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       else if (vendor == SIG_INTEL)
 	{
 	  bool xeon_mp = (family == 15 && model == 6);
-	  cache = detect_caches_intel (xeon_mp, max_level, ext_level);
+	  cache = detect_caches_intel (xeon_mp, max_level,
+				       ext_level, &l2sizekb);
 	}
     }
 
@@ -470,6 +496,12 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 
       if (name == SIG_GEODE)
 	processor = PROCESSOR_GEODE;
+      else if (has_bmi)
+        processor = PROCESSOR_BDVER2;
+      else if (has_xop)
+	processor = PROCESSOR_BDVER1;
+      else if (has_sse4a && has_ssse3)
+        processor = PROCESSOR_BTVER1;
       else if (has_sse4a)
 	processor = PROCESSOR_AMDFAM10;
       else if (has_sse2 || has_longmode)
@@ -518,30 +550,61 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 	cpu = "pentium";
       break;
     case PROCESSOR_PENTIUMPRO:
-      if (has_longmode)
-	/* It is Core 2 or Atom.  */
-	cpu = (model == 28) ? "atom" : "core2";
-      else if (arch)
+      switch (model)
 	{
-	  if (has_sse3)
-	    /* It is Core Duo.  */
-	    cpu = "prescott";
-	  else if (has_sse2)
-	    /* It is Pentium M.  */
-	    cpu = "pentium-m";
-	  else if (has_sse)
-	    /* It is Pentium III.  */
-	    cpu = "pentium3";
-	  else if (has_mmx)
-	    /* It is Pentium II.  */
-	    cpu = "pentium2";
+	case 0x1c:
+	case 0x26:
+	  /* Atom.  */
+	  cpu = "atom";
+	  break;
+	case 0x1a:
+	case 0x1e:
+	case 0x1f:
+	case 0x2e:
+	  /* FIXME: Optimize for Nehalem.  */
+	  cpu = "core2";
+	  break;
+	case 0x25:
+	case 0x2f:
+	  /* FIXME: Optimize for Westmere.  */
+	  cpu = "core2";
+	  break;
+	case 0x17:
+	case 0x1d:
+	  /* Penryn.  FIXME: -mtune=core2 is slower than -mtune=generic  */
+	  cpu = "core2";
+	  break;
+	case 0x0f:
+	  /* Merom.  FIXME: -mtune=core2 is slower than -mtune=generic  */
+	  cpu = "core2";
+	  break;
+	default:
+	  if (arch)
+	    {
+	      if (has_ssse3)
+		/* If it is an unknown CPU with SSSE3, assume Core 2.  */
+		cpu = "core2";
+	      else if (has_sse3)
+		/* It is Core Duo.  */
+		cpu = "pentium-m";
+	      else if (has_sse2)
+		/* It is Pentium M.  */
+		cpu = "pentium-m";
+	      else if (has_sse)
+		/* It is Pentium III.  */
+		cpu = "pentium3";
+	      else if (has_mmx)
+		/* It is Pentium II.  */
+		cpu = "pentium2";
+	      else
+		/* Default to Pentium Pro.  */
+		cpu = "pentiumpro";
+	    }
 	  else
-	    /* Default to Pentium Pro.  */
-	    cpu = "pentiumpro";
+	    /* For -mtune, we default to -mtune=generic.  */
+	    cpu = "generic";
+	  break;
 	}
-      else
-	/* For -mtune, we default to -mtune=generic.  */
-	cpu = "generic";
       break;
     case PROCESSOR_PENTIUM4:
       if (has_sse3)
@@ -577,6 +640,15 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       break;
     case PROCESSOR_AMDFAM10:
       cpu = "amdfam10";
+      break;
+    case PROCESSOR_BDVER1:
+      cpu = "bdver1";
+      break;
+    case PROCESSOR_BDVER2:
+      cpu = "bdver2";
+      break;
+    case PROCESSOR_BTVER1:
+      cpu = "btver1";
       break;
 
     default:
@@ -619,6 +691,19 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 	options = concat (options, "-mpclmul ", NULL);
       if (has_popcnt)
 	options = concat (options, "-mpopcnt ", NULL);
+      if (has_abm)
+	options = concat (options, "-mabm ", NULL);
+      if (has_lwp)
+	options = concat (options, "-mlwp ", NULL);
+      if (has_fma4)
+	options = concat (options, " -mfma4", NULL);
+      if (has_xop)
+	options = concat (options, " -mxop", NULL);
+      if (has_bmi)
+	options = concat (options, " -mbmi", NULL);
+      if (has_tbm)
+	options = concat (options, " -mtbm", NULL);
+
       if (has_avx)
 	options = concat (options, "-mavx ", NULL);
       else if (has_sse4_2)

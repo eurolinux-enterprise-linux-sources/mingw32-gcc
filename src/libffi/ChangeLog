@@ -1,3 +1,80 @@
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2010-12-06  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure.ac (libffi_cv_as_ascii_pseudo_op): Use double
+	backslashes.
+	(libffi_cv_as_string_pseudo_op): Likewise.
+	* configure: Regenerate.
+
+2010-10-01  Jakub Jelinek  <jakub@redhat.com>
+
+	* testsuite/libffi.call/many2.c: Don't use uint8_t.
+
+	PR libffi/45677
+	* src/x86/ffi64.c (ffi_prep_cif_machdep): Ensure cif->bytes is
+	a multiple of 8.
+	* testsuite/libffi.call/many2.c: New test.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-06-20  Gerald Pfeifer  <gerald@pfeifer.com>
+
+	Backport from mainline:
+	2009-09-17  Loren J. Rittle  <ljrittle@acm.org>
+
+	PR testsuite/32843 (strikes again)
+	src/x86/ffi.c (ffi_prep_cif_machdep): Add X86_FREEBSD to
+	enable proper extension on char and short.
+
+2010-05-21  Jakub Jelinek  <jakub@redhat.com>
+
+	* configure: Regenerate.
+
+2010-05-19  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure.ac (libffi_cv_as_x86_pcrel): Check for illegal in as
+	output, too.
+	(libffi_cv_as_ascii_pseudo_op): Check for .ascii.
+	(libffi_cv_as_string_pseudo_op): Check for .string.
+	* configure: Regenerate.
+	* fficonfig.h.in: Regenerate.
+	* src/x86/sysv.S (.eh_frame): Use .ascii, .string or error.
+
+2010-05-19  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-03-15  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure.ac (libffi_cv_as_x86_64_unwind_section_type): New test.
+	* configure: Regenerate.
+	* fficonfig.h.in: Regenerate.
+	* libffi/src/x86/unix64.S (.eh_frame)
+	[HAVE_AS_X86_64_UNWIND_SECTION_TYPE]: Use @unwind section type.
+
+2010-04-29  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/43620
+	* configure.ac (AM_INIT_AUTOMAKE): Add no-dist option.
+	* Makefile.in: Regenerated.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-02-15  Matthias Klose  <doko@ubuntu.com>
+
+	* src/arm/sysv.S (__ARM_ARCH__): Define for processor
+	__ARM_ARCH_7EM__.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
 2009-10-15  Release Manager
 
 	* GCC 4.4.2 released.

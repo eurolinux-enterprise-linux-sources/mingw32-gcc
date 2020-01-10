@@ -438,6 +438,28 @@
   [(set_attr "type" "<VStype_simple>")
    (set_attr "fp_type" "<VSfptype_simple>")])
 
+;; Special VSX version of smin/smax for single precision floating point.  Since
+;; both numbers are rounded to single precision, we can just use the DP version
+;; of the instruction.
+
+(define_insn "*vsx_smaxsf3"
+  [(set (match_operand:SF 0 "vsx_register_operand" "=f")
+        (smax:SF (match_operand:SF 1 "vsx_register_operand" "f")
+		 (match_operand:SF 2 "vsx_register_operand" "f")))]
+  "VECTOR_UNIT_VSX_P (DFmode)"
+  "xsmaxdp %x0,%x1,%x2"
+  [(set_attr "type" "fp")
+   (set_attr "fp_type" "fp_addsub_d")])
+
+(define_insn "*vsx_sminsf3"
+  [(set (match_operand:SF 0 "vsx_register_operand" "=f")
+        (smin:SF (match_operand:SF 1 "vsx_register_operand" "f")
+		 (match_operand:SF 2 "vsx_register_operand" "f")))]
+  "VECTOR_UNIT_VSX_P (DFmode)"
+  "xsmindp %x0,%x1,%x2"
+  [(set_attr "type" "fp")
+   (set_attr "fp_type" "fp_addsub_d")])
+
 (define_insn "*vsx_sqrt<mode>2"
   [(set (match_operand:VSX_B 0 "vsx_register_operand" "=<VSr>,?wa")
         (sqrt:VSX_B (match_operand:VSX_B 1 "vsx_register_operand" "<VSr>,wa")))]
@@ -1217,7 +1239,7 @@
 (define_insn "vsx_splat_<mode>"
   [(set (match_operand:VSX_D 0 "vsx_register_operand" "=wd,wd,wd,?wa,?wa,?wa")
 	(vec_duplicate:VSX_D
-	 (match_operand:<VS_scalar> 1 "input_operand" "ws,f,Z,wa,wa,Z")))]
+	 (match_operand:<VS_scalar> 1 "splat_input_operand" "ws,f,Z,wa,wa,Z")))]
   "VECTOR_MEM_VSX_P (<MODE>mode)"
   "@
    xxpermdi %x0,%x1,%x1,0

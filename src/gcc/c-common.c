@@ -52,6 +52,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple.h"
 #include "fixed-value.h"
 #include "libfuncs.h"
+#include "optabs.h"
 
 cpp_reader *parse_in;		/* Declared in c-pragma.h.  */
 
@@ -2889,6 +2890,20 @@ shorten_compare (tree *op0_ptr, tree *op1_ptr, tree *restype_ptr,
   primop0 = get_narrower (op0, &unsignedp0);
   primop1 = get_narrower (op1, &unsignedp1);
 
+  /* If primopN is first sign-extended from primopN's precision to opN's
+     precision, then zero-extended from opN's precision to
+     *restype_ptr precision, shortenings might be invalid.  */
+  if (TYPE_PRECISION (TREE_TYPE (primop0)) < TYPE_PRECISION (TREE_TYPE (op0))
+      && TYPE_PRECISION (TREE_TYPE (op0)) < TYPE_PRECISION (*restype_ptr)
+      && !unsignedp0
+      && TYPE_UNSIGNED (TREE_TYPE (op0)))
+    primop0 = op0;
+  if (TYPE_PRECISION (TREE_TYPE (primop1)) < TYPE_PRECISION (TREE_TYPE (op1))
+      && TYPE_PRECISION (TREE_TYPE (op1)) < TYPE_PRECISION (*restype_ptr)
+      && !unsignedp1
+      && TYPE_UNSIGNED (TREE_TYPE (op1)))
+    primop1 = op1;
+
   /* Handle the case that OP0 does not *contain* a conversion
      but it *requires* conversion to FINAL_TYPE.  */
 
@@ -3397,20 +3412,7 @@ c_common_truthvalue_conversion (location_t location, tree expr)
 			inner);
 	    return truthvalue_true_node;
 	  }
-
-	/* If we still have a decl, it is possible for its address to
-	   be NULL, so we cannot optimize.  */
-	if (DECL_P (inner))
-	  {
-	    gcc_assert (DECL_WEAK (inner));
-	    break;
-	  }
-
-	if (TREE_SIDE_EFFECTS (inner))
-	  return build2 (COMPOUND_EXPR, truthvalue_type_node,
-			 inner, truthvalue_true_node);
-	else
-	  return truthvalue_true_node;
+	break;
       }
 
     case COMPLEX_EXPR:
@@ -3443,13 +3445,18 @@ c_common_truthvalue_conversion (location_t location, tree expr)
 					       TREE_OPERAND (expr, 0));
 
     case COND_EXPR:
-      /* Distribute the conversion into the arms of a COND_EXPR.  */
-      return fold_build3 (COND_EXPR, truthvalue_type_node,
-		TREE_OPERAND (expr, 0),
-		c_common_truthvalue_conversion (location,
-						TREE_OPERAND (expr, 1)),
-		c_common_truthvalue_conversion (location,
-						TREE_OPERAND (expr, 2)));
+      {
+	tree op1 = TREE_OPERAND (expr, 1);
+	tree op2 = TREE_OPERAND (expr, 2);
+        /* In C++ one of the arms might have void type if it is throw.  */
+	if (!VOID_TYPE_P (TREE_TYPE (op1)))
+	  op1 = c_common_truthvalue_conversion (location, op1);
+	if (!VOID_TYPE_P (TREE_TYPE (op2)))
+	  op2 = c_common_truthvalue_conversion (location, op2);
+	/* Distribute the conversion into the arms of a COND_EXPR.  */
+	return fold_build3 (COND_EXPR, truthvalue_type_node,
+			    TREE_OPERAND (expr, 0), op1, op2);
+      }
 
     CASE_CONVERT:
       /* Don't cancel the effect of a CONVERT_EXPR from a REFERENCE_TYPE,
@@ -4420,6 +4427,14 @@ set_builtin_user_assembler_name (tree decl, const char *asmspec)
       break;
     case BUILT_IN_ABORT:
       abort_libfunc = set_user_assembler_libfunc ("abort", asmspec);
+      break;
+    case BUILT_IN_FFS:
+      if (INT_TYPE_SIZE < BITS_PER_WORD)
+	{
+	  set_user_assembler_libfunc ("ffs", asmspec);
+	  set_optab_libfunc (ffs_optab, mode_for_size (INT_TYPE_SIZE,
+						       MODE_INT, 0), "ffs");
+	}
       break;
     default:
       break;
@@ -5417,6 +5432,8 @@ handle_used_attribute (tree *pnode, tree name, tree ARG_UNUSED (args),
     {
       TREE_USED (node) = 1;
       DECL_PRESERVE_P (node) = 1;
+      if (TREE_CODE (node) == VAR_DECL)
+	DECL_READ_P (node) = 1;
     }
   else
     {
@@ -5443,7 +5460,12 @@ handle_unused_attribute (tree *node, tree name, tree ARG_UNUSED (args),
 	  || TREE_CODE (decl) == FUNCTION_DECL
 	  || TREE_CODE (decl) == LABEL_DECL
 	  || TREE_CODE (decl) == TYPE_DECL)
-	TREE_USED (decl) = 1;
+	{
+	  TREE_USED (decl) = 1;
+	  if (TREE_CODE (decl) == VAR_DECL
+	      || TREE_CODE (decl) == PARM_DECL)
+	    DECL_READ_P (decl) = 1;
+	}
       else
 	{
 	  warning (OPT_Wattributes, "%qE attribute ignored", name);
@@ -5957,10 +5979,12 @@ handle_aligned_attribute (tree *node, tree ARG_UNUSED (name), tree args,
     }
   else if (is_type)
     {
+      if ((flags & (int) ATTR_FLAG_TYPE_IN_PLACE))
+	/* OK, modify the type in place.  */;
       /* If we have a TYPE_DECL, then copy the type, so that we
 	 don't accidentally modify a builtin type.  See pushdecl.  */
-      if (decl && TREE_TYPE (decl) != error_mark_node
-	  && DECL_ORIGINAL_TYPE (decl) == NULL_TREE)
+      else if (decl && TREE_TYPE (decl) != error_mark_node
+	       && DECL_ORIGINAL_TYPE (decl) == NULL_TREE)
 	{
 	  tree tt = TREE_TYPE (decl);
 	  *type = build_variant_type_copy (*type);
@@ -5969,7 +5993,7 @@ handle_aligned_attribute (tree *node, tree ARG_UNUSED (name), tree args,
 	  TREE_USED (*type) = TREE_USED (decl);
 	  TREE_TYPE (decl) = *type;
 	}
-      else if (!(flags & (int) ATTR_FLAG_TYPE_IN_PLACE))
+      else
 	*type = build_variant_type_copy (*type);
 
       TYPE_ALIGN (*type) = (1 << i) * BITS_PER_UNIT;

@@ -1,6 +1,6 @@
 /* DWARF2 exception handling and frame unwind runtime interface routines.
    Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2008, 2009  Free Software Foundation, Inc.
+   2008, 2009, 2010  Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -356,7 +356,16 @@ extract_cie_info (const struct dwarf_cie *cie, struct _Unwind_Context *context,
       aug += 2;
     }
 
-  /* Immediately following the augmentation are the code and
+  /* After the augmentation resp. pointer for "eh" augmentation
+     follows for CIE version >= 4 address size byte and
+     segment size byte.  */
+  if (__builtin_expect (cie->version >= 4, 0))
+    {
+      if (p[0] != sizeof (void *) || p[1] != 0)
+	return NULL;
+      p += 2;
+    }
+  /* Immediately following this are the code and
      data alignment and return address column.  */
   p = read_uleb128 (p, &utmp);
   fs->code_align = (_Unwind_Word)utmp;
@@ -765,7 +774,7 @@ execute_stack_op (const unsigned char *op_ptr, const unsigned char *op_end,
 		result = second - first;
 		break;
 	      case DW_OP_mod:
-		result = (_Unwind_Sword) second % (_Unwind_Sword) first;
+		result = second % first;
 		break;
 	      case DW_OP_mul:
 		result = second * first;

@@ -1284,6 +1284,23 @@ gimple_can_merge_blocks_p (basic_block a, basic_block b)
       && b->loop_father->latch == b)
     return false;
 
+  /* When not optimizing, don't merge if we'd lose goto_locus.  */
+  if (!optimize
+      && single_succ_edge (a)->goto_locus != UNKNOWN_LOCATION)
+    {
+      location_t goto_locus = single_succ_edge (a)->goto_locus;
+      gimple_stmt_iterator prev, next;
+      prev = gsi_last_nondebug_bb (a);
+      next = gsi_after_labels (b);
+      if (!gsi_end_p (next) && is_gimple_debug (gsi_stmt (next)))
+	gsi_next_nondebug (&next);
+      if ((gsi_end_p (prev)
+	   || gimple_location (gsi_stmt (prev)) != goto_locus)
+	  && (gsi_end_p (next)
+	      || gimple_location (gsi_stmt (next)) != goto_locus))
+	return false;
+    }
+
   return true;
 }
 
@@ -1368,7 +1385,7 @@ replace_uses_by (tree name, tree val)
 	  size_t i;
 
 	  fold_stmt_inplace (stmt);
-	  if (cfgcleanup_altered_bbs)
+	  if (cfgcleanup_altered_bbs && !is_gimple_debug (stmt))
 	    bitmap_set_bit (cfgcleanup_altered_bbs, gimple_bb (stmt)->index);
 
 	  /* FIXME.  This should go in pop_stmt_changes.  */
@@ -2659,7 +2676,7 @@ is_ctrl_altering_stmt (gimple t)
 	return true;
 
       /* A call also alters control flow if it does not return.  */
-      if (gimple_call_flags (t) & ECF_NORETURN)
+      if (flags & ECF_NORETURN)
 	return true;
     }
 
@@ -3330,6 +3347,12 @@ verify_gimple_call (gimple stmt)
       && !is_gimple_lvalue (gimple_call_lhs (stmt)))
     {
       error ("invalid LHS in gimple call");
+      return true;
+    }
+
+  if (gimple_call_lhs (stmt) && gimple_call_noreturn_p (stmt))
+    {
+      error ("LHS in noreturn call");
       return true;
     }
 
@@ -4917,14 +4940,23 @@ gimple_redirect_edge_and_branch (edge e, basic_block dest)
     case GIMPLE_ASM:
       {
 	int i, n = gimple_asm_nlabels (stmt);
-	tree label = gimple_block_label (dest);
+	tree label = NULL;
 
 	for (i = 0; i < n; ++i)
 	  {
 	    tree cons = gimple_asm_label_op (stmt, i);
 	    if (label_to_block (TREE_VALUE (cons)) == e->dest)
-	      TREE_VALUE (cons) = label;
+	      {
+		if (!label)
+		  label = gimple_block_label (dest);
+		TREE_VALUE (cons) = label;
+	      }
 	  }
+
+	/* If we didn't find any label matching the former edge in the
+	   asm labels, we must be redirecting the fallthrough
+	   edge.  */
+	gcc_assert (label || (e->flags & EDGE_FALLTHRU));
       }
       break;
 
@@ -6660,7 +6692,7 @@ gimple_flow_call_edges_add (sbitmap blocks)
   if (check_last_block)
     {
       basic_block bb = EXIT_BLOCK_PTR->prev_bb;
-      gimple_stmt_iterator gsi = gsi_last_bb (bb);
+      gimple_stmt_iterator gsi = gsi_last_nondebug_bb (bb);
       gimple t = NULL;
 
       if (!gsi_end_p (gsi))
@@ -6694,7 +6726,7 @@ gimple_flow_call_edges_add (sbitmap blocks)
       if (blocks && !TEST_BIT (blocks, i))
 	continue;
 
-      gsi = gsi_last_bb (bb);
+      gsi = gsi_last_nondebug_bb (bb);
       if (!gsi_end_p (gsi))
 	{
 	  last_stmt = gsi_stmt (gsi);

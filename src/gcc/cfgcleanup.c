@@ -1,6 +1,6 @@
 /* Control flow optimization code for GNU compiler.
    Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -337,7 +337,7 @@ thread_jump (edge e, basic_block b)
 	return NULL;
       }
 
-  cselib_init (false);
+  cselib_init (0);
 
   /* First process all values computed in the source basic block.  */
   for (insn = NEXT_INSN (BB_HEAD (e->src));
@@ -1921,6 +1921,41 @@ try_optimize_cfg (int mode)
 		      && single_succ_edge (ENTRY_BLOCK_PTR)->dest != b))
 		{
 		  c = b->prev_bb;
+		  if (EDGE_COUNT (b->preds) > 0)
+		    {
+		      edge e;
+		      edge_iterator ei;
+
+		      if (current_ir_type () == IR_RTL_CFGLAYOUT)
+			{
+			  if (b->il.rtl->footer
+			      && BARRIER_P (b->il.rtl->footer))
+			    FOR_EACH_EDGE (e, ei, b->preds)
+			      if ((e->flags & EDGE_FALLTHRU)
+				  && e->src->il.rtl->footer == NULL)
+				{
+				  if (b->il.rtl->footer)
+				    {
+				      e->src->il.rtl->footer = b->il.rtl->footer;
+				      b->il.rtl->footer = NULL;
+				    }
+				  else
+				    {
+				      start_sequence ();
+				      e->src->il.rtl->footer = emit_barrier ();
+				      end_sequence ();
+				    }
+				}
+			}
+		      else
+			{
+			  rtx last = get_last_bb_insn (b);
+			  if (last && BARRIER_P (last))
+			    FOR_EACH_EDGE (e, ei, b->preds)
+			      if ((e->flags & EDGE_FALLTHRU))
+				emit_barrier_after (BB_END (e->src));
+			}
+		    }
 		  delete_basic_block (b);
 		  if (!(mode & CLEANUP_CFGLAYOUT))
 		    changed = true;

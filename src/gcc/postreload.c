@@ -1,6 +1,6 @@
 /* Perform simple optimizations to clean up the result of reload.
    Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
+   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -198,7 +198,7 @@ reload_cse_regs_1 (rtx first)
   rtx insn;
   rtx testreg = gen_rtx_REG (VOIDmode, -1);
 
-  cselib_init (true);
+  cselib_init (CSELIB_RECORD_MEMORY);
   init_alias_analysis ();
 
   for (insn = first; insn; insn = NEXT_INSN (insn))
@@ -812,7 +812,7 @@ reload_combine (void)
 	  rtx reg = SET_DEST (set);
 	  rtx plus = SET_SRC (set);
 	  rtx base = XEXP (plus, 1);
-	  rtx prev = prev_nonnote_insn (insn);
+	  rtx prev = prev_nonnote_nondebug_insn (insn);
 	  rtx prev_set = prev ? single_set (prev) : NULL_RTX;
 	  unsigned int regno = REGNO (reg);
 	  rtx const_reg = NULL_RTX;
@@ -1317,7 +1317,7 @@ reload_cse_move2add (rtx first)
 		       && MODES_OK_FOR_MOVE2ADD (GET_MODE (reg),
 						 reg_mode[REGNO (src)]))
 		{
-		  rtx next = next_nonnote_insn (insn);
+		  rtx next = next_nonnote_nondebug_insn (insn);
 		  rtx set = NULL_RTX;
 		  if (next)
 		    set = single_set (next);

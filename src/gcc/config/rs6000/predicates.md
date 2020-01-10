@@ -737,20 +737,32 @@
 (define_predicate "lwa_operand"
   (match_code "reg,subreg,mem")
 {
-  rtx inner = op;
+  rtx inner, addr, offset;
 
+  inner = op;
   if (reload_completed && GET_CODE (inner) == SUBREG)
     inner = SUBREG_REG (inner);
 
-  return gpc_reg_operand (inner, mode)
-    || (memory_operand (inner, mode)
-	&& GET_CODE (XEXP (inner, 0)) != PRE_INC
-	&& GET_CODE (XEXP (inner, 0)) != PRE_DEC
-	&& (GET_CODE (XEXP (inner, 0)) != PRE_MODIFY
-	    || legitimate_indexed_address_p (XEXP (XEXP (inner, 0), 1), 0))
-	&& (GET_CODE (XEXP (inner, 0)) != PLUS
-	    || GET_CODE (XEXP (XEXP (inner, 0), 1)) != CONST_INT
-	    || INTVAL (XEXP (XEXP (inner, 0), 1)) % 4 == 0));
+  if (gpc_reg_operand (inner, mode))
+    return true;
+  if (!memory_operand (inner, mode))
+    return false;
+  addr = XEXP (inner, 0);
+  if (GET_CODE (addr) == PRE_INC
+      || GET_CODE (addr) == PRE_DEC
+      || (GET_CODE (addr) == PRE_MODIFY
+	  && !legitimate_indexed_address_p (XEXP (addr, 1), 0)))
+    return false;
+  if (GET_CODE (addr) == LO_SUM
+      && GET_CODE (XEXP (addr, 0)) == REG
+      && GET_CODE (XEXP (addr, 1)) == CONST)
+    addr = XEXP (XEXP (addr, 1), 0);
+  if (GET_CODE (addr) != PLUS)
+    return true;
+  offset = XEXP (addr, 1);
+  if (GET_CODE (offset) != CONST_INT)
+    return true;
+  return INTVAL (offset) % 4 == 0;
 })
 
 ;; Return 1 if the operand, used inside a MEM, is a SYMBOL_REF.
@@ -839,7 +851,7 @@
     return 1;
 
   /* A SYMBOL_REF referring to the TOC is valid.  */
-  if (legitimate_constant_pool_address_p (op))
+  if (legitimate_constant_pool_address_p (op, mode, false))
     return 1;
 
   /* A constant pool expression (relative to the TOC) is valid */
@@ -854,6 +866,23 @@
     return 1;
 
   return 0;
+})
+
+;; Return 1 if this operand is a valid input for a vsx_splat insn.
+(define_predicate "splat_input_operand"
+  (match_code "label_ref,symbol_ref,const,high,reg,subreg,mem,
+	       const_double,const_vector,const_int,plus")
+{
+  if (MEM_P (op))
+    {
+      if (mode == DFmode)
+	mode = V2DFmode;
+      else if (mode == DImode)
+	mode = V2DImode;
+      else
+	gcc_unreachable ();        
+    }
+  return input_operand (op, mode);
 })
 
 ;; Return true if OP is an invalid SUBREG operation on the e500.

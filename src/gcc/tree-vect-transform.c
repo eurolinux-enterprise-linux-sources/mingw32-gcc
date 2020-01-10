@@ -1,5 +1,5 @@
 /* Transformation Utilities for Loop Vectorization.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com>
 
@@ -3199,7 +3199,6 @@ tree
 vectorizable_function (gimple call, tree vectype_out, tree vectype_in)
 {
   tree fndecl = gimple_call_fndecl (call);
-  enum built_in_function code;
 
   /* We only handle functions that do not read or clobber memory -- i.e.
      const or novops ones.  */
@@ -3211,8 +3210,7 @@ vectorizable_function (gimple call, tree vectype_out, tree vectype_in)
       || !DECL_BUILT_IN (fndecl))
     return NULL_TREE;
 
-  code = DECL_FUNCTION_CODE (fndecl);
-  return targetm.vectorize.builtin_vectorized_function (code, vectype_out,
+  return targetm.vectorize.builtin_vectorized_function (fndecl, vectype_out,
 						        vectype_in);
 }
 
@@ -7437,7 +7435,7 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo, tree niters,
 					  true, GSI_SAME_STMT);
       
       /* Fix phi expressions in the successor bb.  */
-      SET_PHI_ARG_DEF (phi1, update_e->dest_idx, ni_name);
+      adjust_phi_and_debug_stmts (phi1, update_e, ni_name);
     }
 }
 
@@ -8158,7 +8156,7 @@ vect_loop_versioning (loop_vec_info loop_vinfo)
 				  new_exit_bb);
       arg = PHI_ARG_DEF_FROM_EDGE (orig_phi, e);
       add_phi_arg (new_phi, arg, new_exit_e);
-      SET_PHI_ARG_DEF (orig_phi, e->dest_idx, PHI_RESULT (new_phi));
+      adjust_phi_and_debug_stmts (orig_phi, e, PHI_RESULT (new_phi));
     } 
 
   /* End loop-exit-fixes after versioning.  */
@@ -8311,6 +8309,44 @@ vect_schedule_slp (loop_vec_info loop_vinfo)
   return is_store;
 }
 
+/* Kill any debug uses outside LOOP of SSA names defined in STMT.  */
+
+static void
+vect_loop_kill_debug_uses (struct loop *loop, gimple stmt)
+{
+  ssa_op_iter op_iter;
+  imm_use_iterator imm_iter;
+  def_operand_p def_p;
+  gimple ustmt;
+
+  FOR_EACH_PHI_OR_STMT_DEF (def_p, stmt, op_iter, SSA_OP_DEF)
+    {
+      FOR_EACH_IMM_USE_STMT (ustmt, imm_iter, DEF_FROM_PTR (def_p))
+	{
+	  basic_block bb;
+
+	  if (!is_gimple_debug (ustmt))
+	    continue;
+
+	  bb = gimple_bb (ustmt);
+
+	  if (!flow_bb_inside_loop_p (loop, bb))
+	    {
+	      if (gimple_debug_bind_p (ustmt))
+		{
+		  if (vect_print_dump_info (REPORT_DETAILS))
+		    fprintf (vect_dump, "killing debug use");
+
+		  gimple_debug_bind_reset_value (ustmt);
+		  update_stmt (ustmt);
+		}
+	      else
+		gcc_unreachable ();
+	    }
+	}
+    }
+}
+
 /* Function vect_transform_loop.
 
    The analysis phase has determined that the loop is vectorizable.
@@ -8394,6 +8430,9 @@ vect_transform_loop (loop_vec_info loop_vinfo)
 	  if (!stmt_info)
 	    continue;
 
+	  if (MAY_HAVE_DEBUG_STMTS && !STMT_VINFO_LIVE_P (stmt_info))
+	    vect_loop_kill_debug_uses (loop, phi);
+
 	  if (!STMT_VINFO_RELEVANT_P (stmt_info)
 	      && !STMT_VINFO_LIVE_P (stmt_info))
 	    continue;
@@ -8432,6 +8471,9 @@ vect_transform_loop (loop_vec_info loop_vinfo)
 	      gsi_next (&si);
 	      continue;
 	    }
+
+	  if (MAY_HAVE_DEBUG_STMTS && !STMT_VINFO_LIVE_P (stmt_info))
+	    vect_loop_kill_debug_uses (loop, stmt);
 
 	  if (!STMT_VINFO_RELEVANT_P (stmt_info)
 	      && !STMT_VINFO_LIVE_P (stmt_info))

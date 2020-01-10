@@ -1,6 +1,6 @@
 /* Definitions of target machine for GCC for IA-32.
    Copyright (C) 1988, 1992, 1994, 1995, 1996, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
+   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -28,7 +28,6 @@ extern int ix86_can_use_return_insn_p (void);
 extern int ix86_frame_pointer_required (void);
 extern void ix86_setup_frame_addresses (void);
 
-extern void ix86_file_end (void);
 extern int ix86_can_eliminate (int, int);
 extern HOST_WIDE_INT ix86_initial_elimination_offset (int, int);
 extern void ix86_expand_prologue (void);
@@ -137,8 +136,8 @@ extern enum machine_mode ix86_fp_compare_mode (enum rtx_code);
 extern rtx ix86_libcall_value (enum machine_mode);
 extern bool ix86_function_value_regno_p (int);
 extern bool ix86_function_arg_regno_p (int);
-extern int ix86_function_arg_boundary (enum machine_mode, tree);
-extern bool ix86_sol10_return_in_memory (const_tree,const_tree);
+extern int ix86_function_arg_boundary (enum machine_mode, const_tree);
+extern bool ix86_solaris_return_in_memory (const_tree, const_tree);
 extern rtx ix86_force_to_memory (enum machine_mode, rtx);
 extern void ix86_free_from_memory (enum machine_mode);
 extern int ix86_cfun_abi (void);
@@ -218,9 +217,6 @@ extern void ix86_expand_vector_init (bool, rtx, rtx);
 extern void ix86_expand_vector_set (bool, rtx, rtx, int);
 extern void ix86_expand_vector_extract (bool, rtx, rtx, int);
 extern void ix86_expand_reduc_v4sf (rtx (*)(rtx, rtx, rtx), rtx, rtx);
-
-extern bool ix86_fma4_valid_op_p (rtx [], rtx, int, bool, int, bool);
-extern void ix86_expand_fma4_multiple_memory (rtx [], int, enum machine_mode);
 
 /* In i386-c.c  */
 extern void ix86_target_macros (void);

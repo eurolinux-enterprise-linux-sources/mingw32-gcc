@@ -829,7 +829,8 @@ df_ref_create (rtx reg, rtx *loc, rtx insn,
   /* By adding the ref directly, df_insn_rescan my not find any
      differences even though the block will have changed.  So we need
      to mark the block dirty ourselves.  */  
-  df_set_bb_dirty (bb);
+  if (!DEBUG_INSN_P (DF_REF_INSN (ref)))
+    df_set_bb_dirty (bb);
 
   return ref;
 }
@@ -1027,7 +1028,8 @@ df_ref_remove (df_ref ref)
   /* By deleting the ref directly, df_insn_rescan my not find any
      differences even though the block will have changed.  So we need
      to mark the block dirty ourselves.  */  
-  df_set_bb_dirty (DF_REF_BB (ref));
+  if (!DEBUG_INSN_P (DF_REF_INSN (ref)))
+    df_set_bb_dirty (DF_REF_BB (ref));
   df_reg_chain_unlink (ref);
 }
 
@@ -1296,7 +1298,10 @@ df_insn_rescan (rtx insn)
     }
 
   df_refs_add_to_chains (&collection_rec, bb, insn);
-  df_set_bb_dirty (bb);
+  if (DEBUG_INSN_P (insn))
+    df_set_bb_dirty_nonlr (bb);
+  else
+    df_set_bb_dirty (bb);
 
   VEC_free (df_ref, stack, collection_rec.def_vec);
   VEC_free (df_ref, stack, collection_rec.use_vec);
@@ -2388,7 +2393,7 @@ df_ref_compare (const void *r1, const void *r2)
       if (DF_REF_EXTRACT_MODE (ref1) != DF_REF_EXTRACT_MODE (ref2))
 	return DF_REF_EXTRACT_MODE (ref1) - DF_REF_EXTRACT_MODE (ref2);
     }
-  return 0;
+  return (int)DF_REF_ORDER (ref1) - (int)DF_REF_ORDER (ref2);
 }
 
 static void

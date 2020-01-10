@@ -2673,6 +2673,17 @@ gfc_symbols_could_alias (gfc_symbol *lsym, gfc_symbol *rsym)
   if (lsym->attr.allocatable && rsym->attr.pointer)
     return 1;
 
+  /* Special case: Argument association, cf. F90 12.4.1.6, F2003 12.4.1.7
+     and F2008 12.5.2.13 items 3b and 4b. The pointer case (a) is already
+     checked above.  */
+  if (lsym->attr.target && rsym->attr.target
+      && ((lsym->attr.dummy
+	   && (!lsym->attr.dimension || lsym->as->type == AS_ASSUMED_SHAPE))
+	  || (rsym->attr.dummy
+	      && (!rsym->attr.dimension
+		  || rsym->as->type == AS_ASSUMED_SHAPE))))
+    return 1;
+
   return 0;
 }
 
@@ -4237,6 +4248,8 @@ get_iso_c_sym (gfc_symbol *old_sym, char *new_name,
   new_symtree->n.sym->module = gfc_get_string (old_sym->module);
   new_symtree->n.sym->from_intmod = old_sym->from_intmod;
   new_symtree->n.sym->intmod_sym_id = old_sym->intmod_sym_id;
+  if (old_sym->attr.function)
+    new_symtree->n.sym->result = new_symtree->n.sym;
   /* Build the formal arg list.  */
   build_formal_args (new_symtree->n.sym, old_sym, add_optional_arg);
 

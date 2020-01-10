@@ -1815,6 +1815,7 @@ match_exit_cycle (gfc_statement st, gfc_exec_op op)
   gfc_state_data *p, *o;
   gfc_symbol *sym;
   match m;
+  int cnt;
 
   if (gfc_match_eos () == MATCH_YES)
     sym = NULL;
@@ -1837,7 +1838,7 @@ match_exit_cycle (gfc_statement st, gfc_exec_op op)
 	}
     }
 
-  /* Find the loop mentioned specified by the label (or lack of a label).  */
+  /* Find the loop specified by the label (or lack of a label).  */
   for (o = NULL, p = gfc_state_stack; p; p = p->previous)
     if (p->state == COMP_DO && (sym == NULL || sym == p->sym))
       break;
@@ -1862,17 +1863,34 @@ match_exit_cycle (gfc_statement st, gfc_exec_op op)
 		 gfc_ascii_statement (st));
       return MATCH_ERROR;
     }
-  else if (st == ST_EXIT
-	   && p->previous != NULL
-	   && p->previous->state == COMP_OMP_STRUCTURED_BLOCK
-	   && (p->previous->head->op == EXEC_OMP_DO
-	       || p->previous->head->op == EXEC_OMP_PARALLEL_DO))
+
+  for (o = p, cnt = 0; o->state == COMP_DO && o->previous != NULL; cnt++)
+    o = o->previous;
+  if (cnt > 0
+      && o != NULL
+      && o->state == COMP_OMP_STRUCTURED_BLOCK
+      && (o->head->op == EXEC_OMP_DO
+	  || o->head->op == EXEC_OMP_PARALLEL_DO))
     {
-      gcc_assert (p->previous->head->next != NULL);
-      gcc_assert (p->previous->head->next->op == EXEC_DO
-		  || p->previous->head->next->op == EXEC_DO_WHILE);
-      gfc_error ("EXIT statement at %C terminating !$OMP DO loop");
-      return MATCH_ERROR;
+      int collapse = 1;
+      gcc_assert (o->head->next != NULL
+		  && (o->head->next->op == EXEC_DO
+		      || o->head->next->op == EXEC_DO_WHILE)
+		  && o->previous != NULL
+		  && o->previous->tail->op == o->head->op);
+      if (o->previous->tail->ext.omp_clauses != NULL
+	  && o->previous->tail->ext.omp_clauses->collapse > 1)
+	collapse = o->previous->tail->ext.omp_clauses->collapse;
+      if (st == ST_EXIT && cnt <= collapse)
+	{
+	  gfc_error ("EXIT statement at %C terminating !$OMP DO loop");
+	  return MATCH_ERROR;
+	}
+      if (st == ST_CYCLE && cnt < collapse)
+	{
+	  gfc_error ("CYCLE statement at %C to non-innermost collapsed !$OMP DO loop");
+	  return MATCH_ERROR;
+	}
     }
 
   /* Save the first statement in the loop - needed by the backend.  */
@@ -3151,15 +3169,22 @@ gfc_match_module (void)
    do this.  */
 
 void
-gfc_free_equiv (gfc_equiv *eq)
+gfc_free_equiv_until (gfc_equiv *eq, gfc_equiv *stop)
 {
-  if (eq == NULL)
+  if (eq == stop)
     return;
 
   gfc_free_equiv (eq->eq);
-  gfc_free_equiv (eq->next);
+  gfc_free_equiv_until (eq->next, stop);
   gfc_free_expr (eq->expr);
   gfc_free (eq);
+}
+
+
+void
+gfc_free_equiv (gfc_equiv *eq)
+{
+  gfc_free_equiv_until (eq, NULL);
 }
 
 

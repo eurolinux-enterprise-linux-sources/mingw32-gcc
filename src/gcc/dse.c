@@ -1,5 +1,6 @@
 /* RTL dead store elimination.
-   Copyright (C) 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010
+   Free Software Foundation, Inc.
 
    Contributed by Richard Sandiford <rsandifor@codesourcery.com>
    and Kenneth Zadeck <zadeck@naturalbridge.com>
@@ -826,7 +827,7 @@ replace_inc_dec (rtx *r, void *d)
     case POST_INC:
       {
 	rtx r1 = XEXP (x, 0);
-	rtx c = gen_int_mode (Pmode, data->size);
+	rtx c = gen_int_mode (data->size, Pmode);
 	emit_insn_before (gen_rtx_SET (Pmode, r1, 
 				       gen_rtx_PLUS (Pmode, r1, c)),
 			  data->insn);
@@ -837,7 +838,7 @@ replace_inc_dec (rtx *r, void *d)
     case POST_DEC:
       {
 	rtx r1 = XEXP (x, 0);
-	rtx c = gen_int_mode (Pmode, -data->size);
+	rtx c = gen_int_mode (-data->size, Pmode);
 	emit_insn_before (gen_rtx_SET (Pmode, r1, 
 				       gen_rtx_PLUS (Pmode, r1, c)),
 			  data->insn);
@@ -1015,9 +1016,6 @@ const_or_frame_p (rtx x)
 {
   switch (GET_CODE (x))
     {
-    case MEM:
-      return MEM_READONLY_P (x);
-
     case CONST:
     case CONST_INT:
     case CONST_DOUBLE:
@@ -1196,8 +1194,8 @@ canon_address (rtx mem,
       return false;
     }
   if (dump_file)
-    fprintf (dump_file, "  varying cselib base=%d offset = %d\n", 
-	     (*base)->value, (int)*offset);
+    fprintf (dump_file, "  varying cselib base=%u:%u offset = %d\n",
+	     (*base)->uid, (*base)->hash, (int)*offset);
   return true;
 }
 
@@ -1591,8 +1589,7 @@ record_store (rtx body, bb_info_t bb_info)
 
       /* An insn can be deleted if every position of every one of
 	 its s_infos is zero.  */
-      if (any_positions_needed_p (s_info)
-	  || ptr->cannot_delete)
+      if (any_positions_needed_p (s_info))
 	del = false;
 
       if (del)
@@ -1603,8 +1600,9 @@ record_store (rtx body, bb_info_t bb_info)
 	    last->next_local_store = ptr->next_local_store;
 	  else
 	    active_local_stores = ptr->next_local_store;
-	  
-	  delete_dead_store_insn (insn_to_delete);
+
+	  if (!insn_to_delete->cannot_delete)
+	    delete_dead_store_insn (insn_to_delete);
 	}
       else
 	last = ptr;
@@ -2616,7 +2614,7 @@ dse_step1 (void)
   basic_block bb;
   bitmap regs_live = BITMAP_ALLOC (NULL);
   
-  cselib_init (false);
+  cselib_init (0);
   all_blocks = BITMAP_ALLOC (NULL);
   bitmap_set_bit (all_blocks, ENTRY_BLOCK);
   bitmap_set_bit (all_blocks, EXIT_BLOCK);

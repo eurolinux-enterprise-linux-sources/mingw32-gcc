@@ -1,6 +1,6 @@
 /* Header for code translation functions
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008 Free Software
-   Foundation, Inc.
+   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Free Software Foundation, Inc.
    Contributed by Paul Brook
 
 This file is part of GCC.
@@ -126,8 +126,9 @@ typedef enum
      scalarization loop.  */
   GFC_SS_SCALAR,
 
-  /* Like GFC_SS_SCALAR except it evaluates a pointer to the expression.
-     Used for elemental function parameters.  */
+  /* Like GFC_SS_SCALAR it evaluates the expression outside the
+     loop. Is always evaluated as a reference to the temporary.
+     Used for elemental function arguments.  */
   GFC_SS_REFERENCE,
 
   /* An array section.  Scalarization indices will be substituted during
@@ -314,7 +315,7 @@ int gfc_is_intrinsic_libcall (gfc_expr *);
 int gfc_conv_function_call (gfc_se *, gfc_symbol *, gfc_actual_arglist *,
 			    tree);
 
-void gfc_conv_subref_array_arg (gfc_se *, gfc_expr *, int, sym_intent);
+void gfc_conv_subref_array_arg (gfc_se *, gfc_expr *, int, sym_intent, bool);
 
 /* gfc_trans_* shouldn't call push/poplevel, use gfc_push/pop_scope */
 
@@ -508,6 +509,7 @@ bool gfc_get_array_descr_info (const_tree, struct array_descr_info *);
 /* In trans-openmp.c */
 bool gfc_omp_privatize_by_reference (const_tree);
 enum omp_clause_default_kind gfc_omp_predetermined_sharing (tree);
+tree gfc_omp_report_decl (tree);
 tree gfc_omp_clause_default_ctor (tree, tree, tree);
 tree gfc_omp_clause_copy_ctor (tree, tree, tree);
 tree gfc_omp_clause_assign_op (tree, tree, tree);
@@ -768,5 +770,12 @@ extern const char gfc_msg_bounds[];
 extern const char gfc_msg_fault[];
 extern const char gfc_msg_wrong_return[];
 
+#define OMPWS_WORKSHARE_FLAG	1	/* Set if in a workshare construct.  */
+#define OMPWS_CURR_SINGLEUNIT	2	/* Set if current gfc_code in workshare
+					   construct is not workshared.  */
+#define OMPWS_SCALARIZER_WS	4	/* Set if scalarizer should attempt
+					   to create parallel loops.  */
+#define OMPWS_NOWAIT		8	/* Use NOWAIT on OMP_FOR.  */
+extern int ompws_flags;
 
 #endif /* GFC_TRANS_H */

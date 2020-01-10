@@ -107,6 +107,18 @@ ix86_target_macros_internal (int isa_flag,
       def_or_undef (parse_in, "__amdfam10");
       def_or_undef (parse_in, "__amdfam10__");
       break;
+    case PROCESSOR_BDVER1:
+      def_or_undef (parse_in, "__bdver1");
+      def_or_undef (parse_in, "__bdver1__");
+      break;
+    case PROCESSOR_BDVER2:
+      def_or_undef (parse_in, "__bdver2");
+      def_or_undef (parse_in, "__bdver2__");
+      break;
+    case PROCESSOR_BTVER1:
+      def_or_undef (parse_in, "__btver1");
+      def_or_undef (parse_in, "__btver1__");
+      break;
     case PROCESSOR_PENTIUM4:
       def_or_undef (parse_in, "__pentium4");
       def_or_undef (parse_in, "__pentium4__");
@@ -182,6 +194,15 @@ ix86_target_macros_internal (int isa_flag,
     case PROCESSOR_AMDFAM10:
       def_or_undef (parse_in, "__tune_amdfam10__");
       break;
+    case PROCESSOR_BDVER1:
+      def_or_undef (parse_in, "__tune_bdver1__");
+      break;
+    case PROCESSOR_BDVER2:
+      def_or_undef (parse_in, "__tune_bdver2__");
+      break;
+   case PROCESSOR_BTVER1:
+      def_or_undef (parse_in, "__tune_btver1__");
+      break;
     case PROCESSOR_PENTIUM4:
       def_or_undef (parse_in, "__tune_pentium4__");
       break;
@@ -236,6 +257,20 @@ ix86_target_macros_internal (int isa_flag,
     def_or_undef (parse_in, "__XOP__");
   if (isa_flag & OPTION_MASK_ISA_LWP)
     def_or_undef (parse_in, "__LWP__");
+  if (isa_flag & OPTION_MASK_ISA_ABM)
+    def_or_undef (parse_in, "__ABM__");
+  if (isa_flag & OPTION_MASK_ISA_BMI)
+    def_or_undef (parse_in, "__BMI__");
+  if (isa_flag & OPTION_MASK_ISA_TBM)
+    def_or_undef (parse_in, "__TBM__");
+  if (isa_flag & OPTION_MASK_ISA_POPCNT)
+    def_or_undef (parse_in, "__POPCNT__");
+  if (isa_flag & OPTION_MASK_ISA_FSGSBASE)
+    def_or_undef (parse_in, "__FSGSBASE__");
+  if (isa_flag & OPTION_MASK_ISA_RDRND)
+    def_or_undef (parse_in, "__RDRND__");
+  if (isa_flag & OPTION_MASK_ISA_F16C)
+    def_or_undef (parse_in, "__F16C__");
   if ((fpmath & FPMATH_SSE) && (isa_flag & OPTION_MASK_ISA_SSE))
     def_or_undef (parse_in, "__SSE_MATH__");
   if ((fpmath & FPMATH_SSE) && (isa_flag & OPTION_MASK_ISA_SSE2))

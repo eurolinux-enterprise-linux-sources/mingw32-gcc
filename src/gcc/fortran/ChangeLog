@@ -1,3 +1,399 @@
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2011-01-27  Tobias Burnus  <burnus@net-b.de>
+
+	Backport from mainline
+	2011-02-26  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/47886
+	* openmp.c (gfc_resolve_omp_directive): Resolve if()
+	condition of OpenMP's task.
+
+2011-02-19  Tobias Burnus
+
+	PR fortran/47775
+	* trans-expr.c (arrayfunc_assign_needs_temporary): Use
+	esym to check whether the specific procedure returns an
+	allocatable or pointer.
+
+2011-02-14  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/47569
+	* interface.c (compare_parameter): Avoid ICE with
+	character components.
+
+2011-01-16  Jakub Jelinek  <jakub@redhat.com>
+
+	Backport from mainline
+	2010-12-14  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/46874
+	* trans-openmp.c (gfc_trans_omp_array_reduction): Handle allocatable
+	dummy variables.
+
+2010-12-09  Daniel Kraft  <d@domob.eu>
+
+	PR fortran/46794
+	* trans-expr.c (gfc_conv_power_op): Handle kind of result expression
+	correctly for integer kind 1 and 2 operands.
+
+2010-12-09  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/45081
+	* simplify.c (is_constant_array_expr): Allow structure array
+	elements as well as constants.
+	(gfc_simplify_reshape): Copy the derived type of source to
+	the result.
+
+2010-12-07  Jakub Jelinek  <jakub@redhat.com>
+
+	Backport from mainline
+	2010-12-02  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/46753
+	* trans-openmp.c (gfc_trans_omp_do): Use build2_loc instead of
+	fold_build2_loc for OMP_FOR conditions.
+
+2010-11-25  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/46638
+	* target-memory.c (gfc_interpret_derived): Correctly handle
+	component offset.
+
+2010-11-13  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/45742
+	* trans-common.c (build_field): Add TREE_SIDE_EFFECTS for volatile.
+	* trans-decl.c (gfc_finish_var_decl): Ditto.
+	(create_function_arglist): Handle volatile dummy arguments.
+
+2010-10-25  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/46140
+	* fortran/scanner.c (include_line): Check return value of load_file.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-09-08  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/45595
+	* openmp.c (resolve_omp_do): Report not enough do loops for
+	collapse even if block->next is NULL.
+
+2010-08-07  Daniel Franke  <franke.daniel@gmail.com>
+
+	PR fortran/31588
+	PR fortran/43954
+	Backport from mainline:
+	* gfortranspec.c (lang_specific_driver): Removed deprecation
+	warning for -M.
+	* lang.opt: Add options -M, -MM, -MD, -MMD, -MF, -MG, -MP, -MT, -MQ.
+	* lang-specs.h (CPP_FORWARD_OPTIONS): Add -M* options.
+	* cpp.h (gfc_cpp_makedep): New.
+	(gfc_cpp_add_dep): New.
+	(gfc_cpp_add_target): New.
+	* cpp.c (gfc_cpp_option): Add deps* members.
+	(gfc_cpp_makedep): New.
+	(gfc_cpp_add_dep): New.
+	(gfc_cpp_add_target): New.
+	(gfc_cpp_init_options): Initialize new options.
+	(gfc_cpp_handle_option): Handle new options.
+	(gfc_cpp_post_options): Map new options to libcpp-options.
+	(gfc_cpp_init): Handle deferred -MQ and -MT options.
+	(gfc_cpp_done): If requested, write dependencies to file.
+	* module.c (gfc_dump_module): Add a module filename as target.
+	* scanner.c (open_included_file): New parameter system; add the
+	included file as dependency.
+	(gfc_open_included_file): Add the included file as dependency.
+	(gfc_open_intrinsic_module): Likewise.
+	* invoke.texi: Removed deprecation warning for -M.
+	* gfortran.texi: Removed Makefile-dependencies project.
+
+2010-08-06  Mikael Morin  <mikael@gcc.gnu.org>
+
+	PR fortran/44660
+	* gfortran.h (gfc_namespace): New field old_equiv.
+	(gfc_free_equiv_until): New prototype.
+	* match.c (gfc_free_equiv_until): New, renamed from gfc_free_equiv with
+	a parameterized stop condition.
+	(gfc_free_equiv): Use gfc_free_equiv_until.
+	* parse.c (next_statement): Save equivalence list.
+	(reject_statement): Restore equivalence list. 
+
+2010-07-23  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/45019
+	* dependency.c (gfc_check_dependency): Add argument alising check.
+	* symbol.c (gfc_symbols_could_alias): Add argument alising check.
+
+2010-07-15  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/40206
+	* trans-stmt.c (gfc_trans_character_select): Always use NULL for high
+	in CASE_LABEL_EXPR and use NULL for low for the default case.
+
+2010-07-10  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/44582
+	* trans-expr.c (arrayfunc_assign_needs_temporary): New function
+	to determine if a function assignment can be made without a
+	temporary.
+	(gfc_trans_arrayfunc_assign): Move all the conditions that
+	suppress the direct function call to the above new functon and
+	call it.
+
+	PR fortran/44773
+	* trans-expr.c (arrayfunc_assign_needs_temporary): No temporary
+	if the lhs has never been host associated, as well as not being
+	use associated, a pointer or a target.
+	* resolve.c (resolve_variable): Mark variables that are host
+	associated.
+	* gfortran.h: Add the host_assoc bit to the symbol_attribute
+	structure.
+
+2010-07-08  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/44847
+	* match.c (match_exit_cycle): Error on EXIT also from collapsed
+	!$omp do loops.  Error on CYCLE to non-innermost collapsed
+	!$omp do loops.
+
+2010-06-27  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/43841
+	PR fortran/43843
+	* trans-expr.c (gfc_conv_expr): Supply an address expression for
+	GFC_SS_REFERENCE.
+	(gfc_conv_expr_reference): Call gfc_conv_expr and return for
+	GFC_SS_REFERENCE.
+	* trans-array.c (gfc_add_loop_ss_code): Store the value rather
+	than the address of a GFC_SS_REFERENCE.
+	* trans.h : Change comment on GFC_SS_REFERENCE. 
+
+2010-06-15  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/44536
+	* trans-openmp.c (gfc_omp_predetermined_sharing): Don't return
+	OMP_CLAUSE_DEFAULT_SHARED for artificial vars with
+	GFC_DECL_SAVED_DESCRIPTOR set.
+	(gfc_omp_report_decl): New function.
+	* trans.h (gfc_omp_report_decl): New prototype.
+	* f95-lang.c (LANG_HOOKS_OMP_REPORT_DECL): Redefine.
+
+2010-06-09  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	* fortran/intrinsic.c (add_functions): Change gfc_check_btest,
+	gfc_check_ibclr, and gfc_check_ibset to gfc_check_bitfcn.
+	* fortran/intrinsic.h: Remove prototypes for gfc_check_btest,
+	gfc_check_ibclr, and gfc_check_ibset.  Add prototype for
+	gfc_check_bitfcn.
+	* fortran/check.c (nonnegative_check, less_than_bitsize1, 
+	less_than_bitsize2): New functions.
+	(gfc_check_btest): Renamed to gfc_check_bitfcn.  Use
+	nonnegative_check and less_than_bitsize1.
+	(gfc_check_ibclr, gfc_check_ibset): Removed.
+	(gfc_check_ibits,gfc_check_mvbits): Use nonnegative_check and
+	less_than_bitsize1.
+
+2010-06-02  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/44360
+	* parse.c (gfc_fixup_sibling_symbols): Do not "fix" use-associated
+	symbols.
+
+2010-05-14  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/44135
+	* fortran/interface.c (get_sym_storage_size): Use signed instead of
+	unsigned mpz_get_?i routines.
+
+2010-05-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/44036
+	* openmp.c (resolve_omp_clauses): Allow procedure pointers in clause
+	variable lists.
+	* trans-openmp.c (gfc_omp_privatize_by_reference): Don't privatize
+	by reference dummy procedures or non-dummy procedure pointers.
+	(gfc_omp_predetermined_sharing): Return
+	OMP_CLAUSE_DEFAULT_FIRSTPRIVATE for dummy procedures.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-04-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/43836
+	* f95-lang.c (gfc_define_builtin): Set TREE_NOTHROW on
+	the decl.
+
+2010-04-20  Harald Anlauf  <anlauf@gmx.de>
+
+	* intrinsic.c (sort_actual): Remove 'is' in error message.
+
+2010-04-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/43339
+	* openmp.c (gfc_resolve_do_iterator): Only make iteration vars for
+	sequential loops private in the innermost containing task region.
+
+2010-04-16  Jakub Jelinek  <jakub@redhat.com>
+
+	* trans-decl.c (gfc_build_qualified_array): Ensure
+	ubound.N and lbound.N artificial variable names don't appear
+	in debug info.
+
+2010-04-15  Jakub Jelinek  <jakub@redhat.com>
+
+	* trans-decl.c (gfc_build_qualified_array): Clear DECL_IGNORED_P
+	on VAR_DECL LBOUND and/or UBOUND, even for -O1.
+
+2010-04-07  Janne Blomqvist  <jb@gcc.gnu.org>
+
+	PR fortran/43539
+	* gfortran.texi: Add section about representation of
+        LOGICAL variables.
+
+2010-03-30  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/43409
+	Back port from trunk.
+	* ioparm.def: Change inquire size variable to type pointer to
+	GFC_IO_INT type.
+
+2010-03-11  Tobias Burnus  <burnus@net-b.de
+
+	PR fortran/43303
+	* symbol.c (get_iso_c_sym): Set sym->result.
+
+2010-02-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR debug/43166
+	* trans-common.c (build_common_decl): Also update DECL_MODE,
+	and DECL_SIZE when encountering a larger common block and call
+	layout_decl.
+
+2010-02-16  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/41869
+	* module.c (fix_mio_expr): Fix for private generic procedures.
+
+2010-02-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/43030
+	* resolve.c (gfc_resolve_dim_arg): Call gfc_clear_ts.
+
+	PR fortran/43029
+	* decl.c (enumerator_decl): Don't call gfc_free_enum_history
+	here.
+	(gfc_match_enumerator_def): But here whenever enumerator_decl returns
+	MATCH_ERROR.
+
+2010-02-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/42309
+	* trans-expr.c (gfc_conv_subref_array_arg): Avoid accessing
+	info->dimen after info has been freed.
+
+2010-02-06  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/42309
+	* trans-expr.c (gfc_conv_subref_array_arg): Add new argument
+	'formal_ptr'. If this is true, give returned descriptor unity
+	lbounds, in all dimensions, and the appropriate offset.
+	(gfc_conv_procedure_call); If formal is a pointer, set the last
+	argument of gfc_conv_subref_array_arg to true.
+	* trans.h : Add last argument for gfc_conv_subref_array_arg.
+	* trans-io.c (set_internal_unit, gfc_trans_transfer): Set the
+	new arg of gfc_conv_subref_array_arg to false.
+	* trans-stmt.c (forall_make_variable_temp): The same.
+
+2010-02-02  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/42650
+	* parse.c (decode_specification_statement): Use sym->result not sym.
+
+2010-01-31  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/38324
+	* expr.c (gfc_get_full_arrayspec_from_expr): New function.
+	* gfortran.h : Add prototype for above.
+	* trans-expr.c (gfc_trans_alloc_subarray_assign): New function.
+	(gfc_trans_subcomponent_assign): Call new function to replace
+	the code to deal with allocatable components.
+	* trans-intrinsic.c (gfc_conv_intrinsic_bound): Call
+	gfc_get_full_arrayspec_from_expr to replace existing code.
+
+2010-01-30  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/41044
+	PR fortran/41167
+	* expr.c (remove_subobject_ref): If the constructor is NULL use
+	the expression as the source.
+	(simplify_const_ref): Change the type of expression if
+	there are component references.  Allow for substring to be at
+	the end of an arbitrarily long chain of references.  If an
+	element is found that is not in an EXPR_ARRAY, assume that this
+	is scalar initialization of array. Call remove_subobject_ref in
+	this case with NULL second argument.
+
+2010-01-27  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/42736
+	* trans-stmt.c (gfc_conv_elemental_dependencies): If temporary
+	is required, turn any trailing array elements after a range
+	into ranges so that offsets can be calculated.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2010-01-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* gfortranspec.c (lang_specific_driver): Update copyright notice
+	dates.
+
+2009-04-20  Vasilis Liaskovitis  <vliaskov@gmail.com>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/35423
+	* trans.h (OMPWS_WORKSHARE_FLAG, OMPWS_CURR_SINGLEUNIT,
+	OMPWS_SCALARIZER_WS, OMPWS_NOWAIT): Define.
+	(ompws_flags): New extern decl.
+	* trans-array.c (gfc_trans_scalarized_loop_end): Build OMP_FOR
+	for the outer dimension if ompws_flags allow it.
+	* trans.c (gfc_generate_code): Clear ompws_flags.
+	* trans-expr.c (gfc_trans_assignment_1): Allow worksharing
+	array assignments inside of !$omp workshare.
+	* trans-stmt.c (gfc_trans_where_3): Similarly for where statements
+	and constructs.
+	* trans-openmp.c (ompws_flags): New variable.
+	(gfc_trans_omp_workshare): Rewritten.
+
+2009-11-30  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/41278
+	Backport from mainline.
+	* trans-array.c (gfc_conv_array_transpose): Delete unnecessary assert.
+	
+2009-11-26  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/41807
+	Backport from mainline.
+	* trans-const.c (gfc_conv_const): Fix typo in comment. Replace assert
+	with error message if not constant. Set se->expr to a constant on error.
+	* resolve.c (next_data_value): Delete check for constant.
+	
+2009-11-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/42162
+	* trans-openmp.c (gfc_trans_omp_do): When dovar isn't a VAR_DECL,
+	don't use simple loop and handle clauses properly.
+
 2009-11-06  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
 
 	PR fortran/41909

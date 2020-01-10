@@ -1388,6 +1388,8 @@ cxx_sizeof_expr (tree e, tsubst_flags_t complain)
       return e;
     }
 
+  e = mark_type_use (e);
+
   if (TREE_CODE (e) == COMPONENT_REF
       && TREE_CODE (TREE_OPERAND (e, 1)) == FIELD_DECL
       && DECL_C_BIT_FIELD (TREE_OPERAND (e, 1)))
@@ -1442,6 +1444,8 @@ cxx_alignof_expr (tree e, tsubst_flags_t complain)
 
       return e;
     }
+
+  e = mark_type_use (e);
 
   if (TREE_CODE (e) == VAR_DECL)
     t = size_int (DECL_ALIGN_UNIT (e));
@@ -1592,7 +1596,9 @@ unlowered_expr_type (const_tree exp)
    in an rvalue context: the lvalue-to-rvalue, array-to-pointer, and
    function-to-pointer conversions.  In addition, manifest constants
    are replaced by their values, and bitfield references are converted
-   to their declared types.
+   to their declared types. Note that this function does not perform the
+   lvalue-to-rvalue conversion for class types. If you need that conversion
+   to for class types, then you probably need to use force_rvalue.
 
    Although the returned value is being used as an rvalue, this
    function does not wrap the returned expression in a
@@ -1608,6 +1614,8 @@ decay_conversion (tree exp)
   type = TREE_TYPE (exp);
   if (type == error_mark_node)
     return error_mark_node;
+
+  exp = mark_rvalue_use (exp);
 
   if (type_unknown_p (exp))
     {
@@ -1727,6 +1735,8 @@ perform_integral_promotions (tree expr)
 {
   tree type;
   tree promoted_type;
+
+  expr = mark_rvalue_use (expr);
 
   /* [conv.prom]
 
@@ -1955,6 +1965,7 @@ build_class_member_access_expr (tree object, tree member,
     {
       /* A static data member.  */
       result = member;
+      mark_exp_read (object);
       /* If OBJECT has side-effects, they are supposed to occur.  */
       if (TREE_SIDE_EFFECTS (object))
 	result = build2 (COMPOUND_EXPR, TREE_TYPE (result), object, result);
@@ -4372,6 +4383,8 @@ cp_build_unary_op (enum tree_code code, tree xarg, int noconvert,
       if (val != 0)
 	return val;
 
+      arg = mark_lvalue_use (arg);
+
       /* Increment or decrement the real part of the value,
 	 and don't change the imaginary part.  */
       if (TREE_CODE (TREE_TYPE (arg)) == COMPLEX_TYPE)
@@ -4504,6 +4517,8 @@ cp_build_unary_op (enum tree_code code, tree xarg, int noconvert,
 	 regardless of NOCONVERT.  */
 
       argtype = lvalue_type (arg);
+
+      arg = mark_lvalue_use (arg);
 
       if (TREE_CODE (arg) == OFFSET_REF)
 	goto offset_ref;
@@ -6096,11 +6111,15 @@ cp_build_modify_expr (tree lhs, enum tree_code modifycode, tree rhs,
     {
       int from_array;
 
-      if (BRACE_ENCLOSED_INITIALIZER_P (rhs))
-	rhs = digest_init (lhstype, rhs);
+      if (BRACE_ENCLOSED_INITIALIZER_P (newrhs))
+	{
+	  if (check_array_initializer (lhs, lhstype, newrhs))
+	    return error_mark_node;
+	  newrhs = digest_init (lhstype, newrhs);
+	}
 
       else if (!same_or_base_type_p (TYPE_MAIN_VARIANT (lhstype),
-				     TYPE_MAIN_VARIANT (TREE_TYPE (rhs))))
+				     TYPE_MAIN_VARIANT (TREE_TYPE (newrhs))))
 	{
 	  if (complain & tf_error)
 	    error ("incompatible types in assignment of %qT to %qT",
@@ -6557,7 +6576,10 @@ convert_for_assignment (tree type, tree rhs,
 
   if (TREE_CODE (type) == VECTOR_TYPE && coder == VECTOR_TYPE
       && vector_types_convertible_p (type, rhstype, true))
-    return convert (type, rhs);
+    {
+      rhs = mark_rvalue_use (rhs);
+      return convert (type, rhs);
+    }
 
   if (rhs == error_mark_node || rhstype == error_mark_node)
     return error_mark_node;
@@ -6599,7 +6621,10 @@ convert_for_assignment (tree type, tree rhs,
 	}
 
       if (objc_compare_types (type, rhstype, parmno, rname))
-	return convert (type, rhs);
+	{
+	  rhs = mark_rvalue_use (rhs);
+	  return convert (type, rhs);
+	}
     }
 
   /* [expr.ass]

@@ -1,3 +1,63 @@
+2011-04-24  Jakub Jelinek  <jakub@redhat.com>
+
+	PR preprocessor/48740
+	* lex.c (lex_raw_string): When raw string ends with
+	??) followed by raw prefix and ", ensure it is preprocessed
+	with ??) rather than ??].
+
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2011-11-04  Eric Botcazou  <ebotcazou@adacore.com>
+            Jakub Jelinek  <jakub@redhat.com>
+
+	PR preprocessor/39213
+	* directives.c (end_directive): Call _cpp_remove_overlay for deferred
+	pragmas as well in traditional mode.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2009-10-09  Neil Vachharajani <nvachhar@google.com>
+
+	* directives.c (DIRECTIVE_TABLE): Remove DEPRECATED from ident and
+	sccs.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-04-06  Jakub Jelinek  <jakub@redhat.com>
+
+	PR preprocessor/43642
+	* lex.c (lex_raw_string): Change type of TYPE variable to
+	unsigned char.
+
+2010-03-29  Jason Merrill  <jason@redhat.com>
+
+	More N3077 raw string changes
+	* charset.c (cpp_interpret_string): Don't transform UCNs in raw
+	strings.
+	* lex.c (bufring_append): Split out from...
+	(lex_raw_string): ...here.  Undo trigraph and line splicing
+	transformations.  Do process line notes in multi-line literals.
+	(_cpp_process_line_notes): Ignore notes that were already handled.
+
+	Some raw string changes from N3077
+	* charset.c (cpp_interpret_string): Change inner delimiters to ().
+	* lex.c (lex_raw_string): Likewise.  Also disallow '\' in delimiter.
+
+2010-02-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* init.c (read_original_filename): Don't call read_original_directory
+	if _cpp_handle_directive returns 0.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
 2009-11-11  Kai Tietz  <kai.tietz@onevision.com>
 
 	Backported from trunk

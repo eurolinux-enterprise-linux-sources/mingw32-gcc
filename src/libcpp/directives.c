@@ -152,11 +152,11 @@ D(error,	T_ERROR,	STDC89,    0)		   /*    475 */ \
 D(pragma,	T_PRAGMA,	STDC89,    IN_I)	   /*    195 */ \
 D(warning,	T_WARNING,	EXTENSION, 0)		   /*     22 */ \
 D(include_next,	T_INCLUDE_NEXT,	EXTENSION, INCL | EXPAND)  /*     19 */ \
-D(ident,	T_IDENT,	EXTENSION, IN_I | DEPRECATED) /*     11 */ \
+D(ident,	T_IDENT,	EXTENSION, IN_I)           /*     11 */ \
 D(import,	T_IMPORT,	EXTENSION, INCL | EXPAND)  /* 0 ObjC */	\
 D(assert,	T_ASSERT,	EXTENSION, DEPRECATED)	   /* 0 SVR4 */	\
 D(unassert,	T_UNASSERT,	EXTENSION, DEPRECATED)	   /* 0 SVR4 */	\
-D(sccs,		T_SCCS,		EXTENSION, IN_I | DEPRECATED) /* 0 SVR4? */
+D(sccs,		T_SCCS,		EXTENSION, IN_I)           /* 0 SVR4? */
 
 /* #sccs is synonymous with #ident.  */
 #define do_sccs do_ident
@@ -276,16 +276,17 @@ start_directive (cpp_reader *pfile)
 static void
 end_directive (cpp_reader *pfile, int skip_line)
 {
-  if (pfile->state.in_deferred_pragma)
-    ;
-  else if (CPP_OPTION (pfile, traditional))
+  if (CPP_OPTION (pfile, traditional))
     {
       /* Revert change of prepare_directive_trad.  */
-      pfile->state.prevent_expansion--;
+      if (!pfile->state.in_deferred_pragma)
+	pfile->state.prevent_expansion--;
 
       if (pfile->directive != &dtable[T_DEFINE])
 	_cpp_remove_overlay (pfile);
     }
+  else if (pfile->state.in_deferred_pragma)
+    ;
   /* We don't skip for an assembler #.  */
   else if (skip_line)
     {

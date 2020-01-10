@@ -1,3 +1,179 @@
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2011-01-19  Graham Reed  <greed@pobox.com>
+
+	PR libstdc++/47354
+	* src/bitmap_allocator.cc (free_list::_M_get): Lock mutex.
+
+2010-12-10  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* testsuite/lib/libstdc++.exp (v3-build_support): Delete
+	libtestc++.a before creation.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2009-12-18  Jimmy Guo  <jguo@yahoo-inc.com>
+
+	PR libstdc++/40088
+	* src/locale_init.cc (locale::locale()): Optimize the common case
+	where _S_global still points to _S_classic.
+
+2010-09-17  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-07-26  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* testsuite/22_locale/num_put/put/char/14220.cc: XFAIL on Solaris
+	9/x86, 32-bit Solaris 10/x86 and 64-bit Solaris 10/SPARC.
+	* testsuite/22_locale/num_put/put/wchar_t/14220.cc: XFAIL on
+	Solaris 9/x86 and 32-bit Solaris 10/x86.
+
+	* testsuite/27_io/basic_istream/extractors_arithmetic/char/12.cc:
+	Only XFAIL on Solaris 8 and 9.
+	* testsuite/27_io/basic_istream/extractors_arithmetic/wchar_t/12.cc:
+	Likewise.
+
+	* testsuite/ext/enc_filebuf/char/13598.cc: XFAIL before Solaris 11.
+
+2010-06-16  Matthias Klose  <doko@ubuntu.com>
+
+	* src/compatibility.cc: Export long double versions of "C" math
+	library for arm-linux-gnueabi, m68k-linux-gnu (ColdFire),
+	mips*-linux-gnu (o32 ABI), sh*-linux-gnu (32 bit).
+
+2010-06-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-02-24  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* testsuite/ext/new_allocator/deallocate_global.cc: Require
+	__cxa_atexit.
+	* testsuite/ext/throw_allocator/deallocate_global.cc: Likewise.
+
+2010-06-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-03-01  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR libstdc++/32499
+	* testsuite/Makefile.am (check-DEJAGNU
+	$(check_DEJAGNU_normal_targets)): Export AR, RANLIB.
+	* testsuite/Makefile.in: Regenerate.
+
+2010-04-29  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/43620
+	* configure.ac (AM_INIT_AUTOMAKE): Add no-dist option.
+	* Makefile.in: Regenerated.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-04-10  Jonathan Wakely  <jwakely.gcc@gmail.com>
+
+	Backport:
+	2009-06-23  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/40518
+	* include/bits/basic_string.h (basic_string<>::_Rep::
+	_M_set_length_and_sharable): Do not write the empty rep.
+	(basic_string<>::erase(iterator, iterator)): Likewise,
+	move out of line...
+	* include/bits/basic_string.tcc: ... here.
+
+2010-04-08  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
+
+	PR target/43458
+	* testsuite/26_numerics/headers/cmath/c99_classification_macros_c.cc:
+	Xfail hppa*-*-hpux*.
+
+2010-03-22  Johannes Singler  <singler@kit.edu>
+
+        * include/parallel/numeric (inner_product, partial_sum):
+        Precede subsequent call with _GLIBCXX_STD_P:: to avoid ambiguity 
+        between __gnu_parallel:: and std::
+        * include/parallel/algobase.h (equal): Likewise.
+        * include/parallel/algo.h (find_first_of, search_n, merge, nth_element,
+        partial_sort, max_element, min_element): Likewise.
+        * include/parallel/partial_sum.h (parallel_partial_sum_linear):
+        Qualify accumulate call with __gnu_parallel::.
+
+2010-03-18  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/backward/hash_map: Use consistently the _BACKWARD_*
+	prefix for the include guard.
+	* include/backward/hash_fun.h: Likewise.
+	* include/backward/hashtable.h: Likewise.
+	* include/backward/auto_ptr.h: Likewise.
+	* include/backward/strstream: Likewise.
+	* include/backward/binders.h: Likewise.
+	* include/backward/hash_set: Likewise.
+
+2010-02-23  Kaveh R. Ghazi  <ghazi@caip.rutgers.edu>
+
+	Backport:
+	2010-01-20  Janis Johnson  <janis187@us.ibm.com>
+		    Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/21769
+	* testsuite/lib/dg-options.exp (add_options_for_no_pch): Add.
+	* testsuite/26_numerics/headers/cmath/c99_classification_macros_c.cc:
+	Use it.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2009-12-10  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	Revert:
+        2009-12-04  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/42261
+	* include/bits/basic_string.h (_S_construct_aux(_Integer, _Integer,
+	const _Alloc&, __true_type)): Cast the second argument to value_type.
+	* include/ext/sso_string_base.h (_M_construct_aux(_Integer, _Integer,
+	std::__true_type)): Likewise.
+	* include/ext/rc_string_base.h (_S_construct_aux(_Integer, _Integer,
+	const _Alloc&, std::__true_type)): Likewise.
+	* testsuite/21_strings/basic_string/cons/char/42261.cc: New.
+	* testsuite/21_strings/basic_string/cons/wchar_t/42261.cc: Likewise.
+
+2009-12-09  Roman Odaisky  <to.roma.from.bugcc@qwertty.com>
+
+	PR libstdc++/42273
+	* include/bits/atomic_2.h: Fix typo.
+
+2009-12-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/42317
+	* config/abi/pre/gnu.ver: Don't export certain base dtors that
+	weren't previously exported.
+
+2009-12-04  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/42261
+	* include/bits/basic_string.h (_S_construct_aux(_Integer, _Integer,
+	const _Alloc&, __true_type)): Cast the second argument to value_type.
+	* include/ext/sso_string_base.h (_M_construct_aux(_Integer, _Integer,
+	std::__true_type)): Likewise.
+	* include/ext/rc_string_base.h (_S_construct_aux(_Integer, _Integer,
+	const _Alloc&, std::__true_type)): Likewise.
+	* testsuite/21_strings/basic_string/cons/char/42261.cc: New.
+	* testsuite/21_strings/basic_string/cons/wchar_t/42261.cc: Likewise.
+
+2009-11-19  Johannes Singler  <singler@kit.edu>
+
+        * include/parallel/partition.h (__parallel_partition): Correctly
+        initialize chunk size.
+        (__parallel_nth_element): Respect nth_element_minimal_n.  Use
+        sequential nth_element as base case, instead of sequential sort.
+
 2009-10-30  Jerry Quinn  <jlquinn@optonline.net>
 
 	* libsupc++/tinfo.cc (operator=(const type_info&)): Compare by
@@ -9,8 +185,8 @@
 
         PR libstdc++/40852
         * include/parallel/multiseq_selection.h
-        (multiseq_partition, multiseq_selection):  Avoid intermediate 
-        values exceeding the integer type range for very large inputs.
+        (multiseq_partition, multiseq_selection):  Avoid intermediate
+	values exceeding the integer type range for very large inputs.
 
 2009-10-20  Paolo Carlini  <paolo.carlini@oracle.com>
 

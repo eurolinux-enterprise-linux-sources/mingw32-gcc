@@ -275,7 +275,7 @@ find_released_ssa_name (tree *tp, int *walk_subtrees, void *data_)
 {
   struct walk_stmt_info *wi = (struct walk_stmt_info *) data_;
 
-  if (wi->is_lhs)
+  if (wi && wi->is_lhs)
     return NULL_TREE;
 
   if (TREE_CODE (*tp) == SSA_NAME)
@@ -308,9 +308,13 @@ insert_debug_temp_for_var_def (gimple_stmt_iterator *gsi, tree var)
   if (!MAY_HAVE_DEBUG_STMTS)
     return;
 
-  /* First of all, check whether there are debug stmts that reference
-     this variable and, if there are, decide whether we should use a
-     debug temp.  */
+  /* If this name has already been registered for replacement, do nothing
+     as anything that uses this name isn't in SSA form.  */
+  if (name_registered_for_update_p (var))
+    return;
+
+  /* Check whether there are debug stmts that reference this variable and,
+     if there are, decide whether we should use a debug temp.  */
   FOR_EACH_IMM_USE_FAST (use_p, imm_iter, var)
     {
       stmt = USE_STMT (use_p);
@@ -342,7 +346,13 @@ insert_debug_temp_for_var_def (gimple_stmt_iterator *gsi, tree var)
   /* If we didn't get an insertion point, and the stmt has already
      been removed, we won't be able to insert the debug bind stmt, so
      we'll have to drop debug information.  */
-  if (is_gimple_assign (def_stmt))
+  if (gimple_code (def_stmt) == GIMPLE_PHI)
+    {
+      value = degenerate_phi_result (def_stmt);
+      if (value && walk_tree (&value, find_released_ssa_name, NULL, NULL))
+	value = NULL;
+    }
+  else if (is_gimple_assign (def_stmt))
     {
       bool no_value = false;
 
@@ -379,8 +389,7 @@ insert_debug_temp_for_var_def (gimple_stmt_iterator *gsi, tree var)
 	     dead SSA NAMEs.  SSA verification shall catch any
 	     errors.  */
 	  if ((!gsi && !gimple_bb (def_stmt))
-	      || !walk_gimple_op (def_stmt, find_released_ssa_name,
-				  &wi))
+	      || walk_gimple_op (def_stmt, find_released_ssa_name, &wi))
 	    no_value = true;
 	}
 
@@ -405,6 +414,7 @@ insert_debug_temp_for_var_def (gimple_stmt_iterator *gsi, tree var)
 	 at the expense of duplication of expressions.  */
 
       if (CONSTANT_CLASS_P (value)
+	  || gimple_code (def_stmt) == GIMPLE_PHI
 	  || (usecount == 1
 	      && (!gimple_assign_single_p (def_stmt)
 		  || is_gimple_min_invariant (value)))
@@ -475,7 +485,7 @@ insert_debug_temps_for_defs (gimple_stmt_iterator *gsi)
 
   stmt = gsi_stmt (*gsi);
 
-  FOR_EACH_SSA_DEF_OPERAND (def_p, stmt, op_iter, SSA_OP_DEF)
+  FOR_EACH_PHI_OR_STMT_DEF (def_p, stmt, op_iter, SSA_OP_DEF)
     {
       tree var = DEF_FROM_PTR (def_p);
 

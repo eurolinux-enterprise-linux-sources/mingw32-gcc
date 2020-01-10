@@ -1,5 +1,5 @@
 /* OpenMP directive matching and resolving.
-   Copyright (C) 2005, 2006, 2007, 2008
+   Copyright (C) 2005, 2006, 2007, 2008, 2010
    Free Software Foundation, Inc.
    Contributed by Jakub Jelinek
 
@@ -812,6 +812,8 @@ resolve_omp_clauses (gfc_code *code)
 		if (el)
 		  continue;
 	      }
+	    if (n->sym->attr.proc_pointer)
+	      continue;
 	  }
 	gfc_error ("Object '%s' is not a variable at %L", n->sym->name,
 		   &code->loc);
@@ -1367,7 +1369,6 @@ gfc_resolve_omp_parallel_blocks (gfc_code *code, gfc_namespace *ns)
 void
 gfc_resolve_do_iterator (gfc_code *code, gfc_symbol *sym)
 {
-  struct omp_context *ctx;
   int i = omp_current_do_collapse;
   gfc_code *c = omp_current_do_code;
 
@@ -1386,21 +1387,21 @@ gfc_resolve_do_iterator (gfc_code *code, gfc_symbol *sym)
       c = c->block->next;
     }
 
-  for (ctx = omp_current_ctx; ctx; ctx = ctx->previous)
+  if (omp_current_ctx == NULL)
+    return;
+
+  if (pointer_set_contains (omp_current_ctx->sharing_clauses, sym))
+    return;
+
+  if (! pointer_set_insert (omp_current_ctx->private_iterators, sym))
     {
-      if (pointer_set_contains (ctx->sharing_clauses, sym))
-	continue;
+      gfc_omp_clauses *omp_clauses = omp_current_ctx->code->ext.omp_clauses;
+      gfc_namelist *p;
 
-      if (! pointer_set_insert (ctx->private_iterators, sym))
-	{
-	  gfc_omp_clauses *omp_clauses = ctx->code->ext.omp_clauses;
-	  gfc_namelist *p;
-
-	  p = gfc_get_namelist ();
-	  p->sym = sym;
-	  p->next = omp_clauses->lists[OMP_LIST_PRIVATE];
-	  omp_clauses->lists[OMP_LIST_PRIVATE] = p;
-	}
+      p = gfc_get_namelist ();
+      p->sym = sym;
+      p->next = omp_clauses->lists[OMP_LIST_PRIVATE];
+      omp_clauses->lists[OMP_LIST_PRIVATE] = p;
     }
 }
 
@@ -1488,7 +1489,8 @@ resolve_omp_do (gfc_code *code)
 	  break;
 	}
       do_code = do_code->next;
-      if (do_code->op != EXEC_DO && do_code->op != EXEC_DO_WHILE)
+      if (do_code == NULL
+	  || (do_code->op != EXEC_DO && do_code->op != EXEC_DO_WHILE))
 	{
 	  gfc_error ("not enough DO loops for collapsed !$OMP DO at %L",
 		     &code->loc);
@@ -1516,6 +1518,7 @@ gfc_resolve_omp_directive (gfc_code *code, gfc_namespace *ns ATTRIBUTE_UNUSED)
     case EXEC_OMP_PARALLEL_SECTIONS:
     case EXEC_OMP_SECTIONS:
     case EXEC_OMP_SINGLE:
+    case EXEC_OMP_TASK:
       if (code->ext.omp_clauses)
 	resolve_omp_clauses (code);
       break;

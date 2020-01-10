@@ -1,7 +1,7 @@
 /* Global common subexpression elimination/Partial redundancy elimination
    and global constant/copy propagation for GNU compiler.
    Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007, 2008, 2009 Free Software Foundation, Inc.
+   2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1775,7 +1775,7 @@ hash_scan_set (rtx pat, rtx insn, struct hash_table *table)
 		  modified.  Here we want to search from INSN+1 on, but
 		  oprs_available_p searches from INSN on.  */
 	       && (insn == BB_END (BLOCK_FOR_INSN (insn))
-		   || (tmp = next_nonnote_insn (insn)) == NULL_RTX
+		   || (tmp = next_nonnote_nondebug_insn (insn)) == NULL_RTX
 		   || BLOCK_FOR_INSN (tmp) != BLOCK_FOR_INSN (insn)
 		   || oprs_available_p (pat, tmp)))
 	insert_set_in_table (pat, insn, table);
@@ -2076,7 +2076,7 @@ compute_hash_table_work (struct hash_table *table)
 
       FOR_BB_INSNS (current_bb, insn)
 	{
-	  if (! INSN_P (insn))
+	  if (!NONDEBUG_INSN_P (insn))
 	    continue;
 
 	  if (CALL_P (insn))
@@ -2099,7 +2099,7 @@ compute_hash_table_work (struct hash_table *table)
 
       /* The next pass builds the hash table.  */
       FOR_BB_INSNS (current_bb, insn)
-	if (INSN_P (insn))
+	if (NONDEBUG_INSN_P (insn))
 	  hash_scan_insn (insn, table);
     }
 
@@ -3153,7 +3153,7 @@ local_cprop_pass (bool alter_jumps)
   struct reg_use *reg_used;
   bool changed = false;
 
-  cselib_init (false);
+  cselib_init (0);
   FOR_EACH_BB (bb)
     {
       FOR_BB_INSNS (bb, insn)
@@ -3988,7 +3988,7 @@ insert_insn_end_basic_block (struct expr *expr, basic_block bb, int pre)
 	 the new instruction just before the tablejump.  */
       if (GET_CODE (PATTERN (insn)) == ADDR_VEC
 	  || GET_CODE (PATTERN (insn)) == ADDR_DIFF_VEC)
-	insn = prev_real_insn (insn);
+	insn = prev_active_insn (insn);
 
 #ifdef HAVE_cc0
       /* FIXME: 'twould be nice to call prev_cc0_setter here but it aborts

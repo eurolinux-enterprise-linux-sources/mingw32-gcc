@@ -77,7 +77,6 @@ framework extensions, you must include this file before toplev.h, not after.
       BASELINK_QUALIFIED_P (in BASELINK)
       TARGET_EXPR_IMPLICIT_P (in TARGET_EXPR)
       TEMPLATE_PARM_PARAMETER_PACK (in TEMPLATE_PARM_INDEX)
-      TYPE_REF_IS_RVALUE (in REFERENCE_TYPE)
       ATTR_IS_DEPENDENT (in the TREE_LIST for an attribute)
       CONSTRUCTOR_IS_DIRECT_INIT (in CONSTRUCTOR)
    1: IDENTIFIER_VIRTUAL_P (in IDENTIFIER_NODE)
@@ -118,7 +117,6 @@ framework extensions, you must include this file before toplev.h, not after.
    3: TYPE_FOR_JAVA.
    4: TYPE_HAS_NONTRIVIAL_DESTRUCTOR
    5: CLASS_TYPE_P (in RECORD_TYPE and UNION_TYPE)
-      SCOPED_ENUM_P (in ENUMERAL_TYPE)
    6: TYPE_DEPENDENT_P_VALID
 
    Usage of DECL_LANG_FLAG_?:
@@ -883,7 +881,8 @@ struct language_function GTY(())
    expression for `*this'.  */
 
 #define current_class_ptr \
-  (cfun ? cp_function_chain->x_current_class_ptr : NULL_TREE)
+  (cfun && cp_function_chain					\
+   ? cp_function_chain->x_current_class_ptr : NULL_TREE)
 #define current_class_ref \
   (cfun ? cp_function_chain->x_current_class_ref : NULL_TREE)
 
@@ -2742,17 +2741,17 @@ more_aggr_init_expr_args_p (const aggr_init_expr_arg_iterator *iter)
 
      - The underlying type of the enum is well-defined.  */
 #define SCOPED_ENUM_P(TYPE)                                             \
-  (TREE_CODE (TYPE) == ENUMERAL_TYPE && TYPE_LANG_FLAG_5 (TYPE))
+  (TREE_CODE (TYPE) == ENUMERAL_TYPE && ENUM_IS_SCOPED (TYPE))
 
 /* Determine whether this is an unscoped enumeration type.  */
 #define UNSCOPED_ENUM_P(TYPE)                                           \
-  (TREE_CODE (TYPE) == ENUMERAL_TYPE && !TYPE_LANG_FLAG_5 (TYPE))
+  (TREE_CODE (TYPE) == ENUMERAL_TYPE && !ENUM_IS_SCOPED (TYPE))
 
 /* Set the flag indicating whether an ENUMERAL_TYPE is a C++0x scoped
    enumeration type (1) or a normal (unscoped) enumeration type
    (0).  */
 #define SET_SCOPED_ENUM_P(TYPE, VAL)                    \
-  (TYPE_LANG_FLAG_5 (ENUMERAL_TYPE_CHECK (TYPE)) = (VAL))
+  (ENUM_IS_SCOPED (TYPE) = (VAL))
 
 /* Returns the underlying type of the given enumeration type. The
    underlying type is determined in different ways, depending on the
@@ -2906,10 +2905,6 @@ more_aggr_init_expr_args_p (const aggr_init_expr_arg_iterator *iter)
    in ascending tree code order.  */
 #define TYPE_REF_OBJ_P(NODE)					\
   (TREE_CODE (NODE) == REFERENCE_TYPE && TYPE_OBJ_P (TREE_TYPE (NODE)))
-
-/* True if reference type NODE is an rvalue reference */
-#define TYPE_REF_IS_RVALUE(NODE) \
-  TREE_LANG_FLAG_0 (REFERENCE_TYPE_CHECK (NODE))
 
 /* Returns true if NODE is a pointer to an object, or a pointer to
    void.  Keep these checks in ascending tree code order.  */
@@ -4192,6 +4187,7 @@ extern tree build_new_function_call		(tree, tree, bool,
 						 tsubst_flags_t);
 extern tree build_operator_new_call		(tree, tree, tree *, tree *,
 						 tree *);
+extern tree build_object_call			(tree, tree, tsubst_flags_t);
 extern tree build_new_method_call		(tree, tree, tree, tree, int,
 						 tree *, tsubst_flags_t);
 extern tree build_special_member_call		(tree, tree, tree, tree, int,
@@ -4467,6 +4463,10 @@ extern tree eh_type_info			(tree);
 
 /* in expr.c */
 extern tree cplus_expand_constant		(tree);
+extern tree mark_rvalue_use			(tree);
+extern tree mark_lvalue_use			(tree);
+extern tree mark_type_use			(tree);
+extern void mark_exp_read			(tree);
 
 /* friend.c */
 extern int is_friend				(tree, tree);
@@ -4800,6 +4800,7 @@ extern void finish_eh_cleanup			(tree);
 extern void emit_associated_thunks		(tree);
 extern void finish_mem_initializers		(tree);
 extern tree check_template_template_default_arg (tree);
+extern bool expand_or_defer_fn_1		(tree);
 extern void expand_or_defer_fn			(tree);
 extern void check_accessibility_of_qualified_id (tree, tree, tree);
 extern tree finish_qualified_id_expr		(tree, tree, bool, bool,

@@ -2259,9 +2259,7 @@ noce_process_if_block (struct noce_if_info *if_info)
     }
   else
     {
-      insn_b = prev_nonnote_insn (if_info->cond_earliest);
-      while (insn_b && DEBUG_INSN_P (insn_b))
-	insn_b = prev_nonnote_insn (insn_b);
+      insn_b = prev_nonnote_nondebug_insn (if_info->cond_earliest);
       /* We're going to be moving the evaluation of B down from above
 	 COND_EARLIEST to JUMP.  Make sure the relevant data is still
 	 intact.  */
@@ -4053,7 +4051,8 @@ dead_or_predicable (basic_block test_bb, basic_block merge_bb,
 	  if (! note)
 	    continue;
 	  set = single_set (insn);
-	  if (!set || !function_invariant_p (SET_SRC (set)))
+	  if (!set || !function_invariant_p (SET_SRC (set))
+	      || !function_invariant_p (XEXP (note, 0)))
 	    remove_note (insn, note);
 	} while (insn != end && (insn = NEXT_INSN (insn)));
 
@@ -4131,7 +4130,12 @@ if_convert (void)
 
 #ifdef IFCVT_MULTIPLE_DUMPS
       if (dump_file && cond_exec_changed_p)
-	print_rtl_with_bb (dump_file, get_insns ());
+	{
+	  if (dump_flags & TDF_SLIM)
+	    print_rtl_slim_with_bb (dump_file, get_insns (), dump_flags);
+	  else
+	    print_rtl_with_bb (dump_file, get_insns ());
+	}
 #endif
     }
   while (cond_exec_changed_p);

@@ -1,6 +1,6 @@
 /* Process declarations and variables for C compiler.
    Copyright (C) 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -801,14 +801,21 @@ pop_scope (void)
 
 	case VAR_DECL:
 	  /* Warnings for unused variables.  */
-	  if (!TREE_USED (p)
+	  if ((!TREE_USED (p) || !DECL_READ_P (p))
 	      && !TREE_NO_WARNING (p)
 	      && !DECL_IN_SYSTEM_HEADER (p)
 	      && DECL_NAME (p)
 	      && !DECL_ARTIFICIAL (p)
 	      && scope != file_scope
 	      && scope != external_scope)
-	    warning (OPT_Wunused_variable, "unused variable %q+D", p);
+	    {
+	      if (!TREE_USED (p))
+		warning (OPT_Wunused_variable, "unused variable %q+D", p);
+	      else if (DECL_CONTEXT (p) == current_function_decl)
+		warning_at (DECL_SOURCE_LOCATION (p),
+			    OPT_Wunused_but_set_variable,
+			    "variable %qD set but not used", p);
+	    }
 
 	  if (b->inner_comp)
 	    {
@@ -1874,6 +1881,8 @@ merge_decls (tree newdecl, tree olddecl, tree newtype, tree oldtype)
      TREE_USED (newdecl) = 1;
    else if (TREE_USED (newdecl))
      TREE_USED (olddecl) = 1;
+   if (TREE_CODE (olddecl) == VAR_DECL || TREE_CODE (olddecl) == PARM_DECL)
+     DECL_READ_P (newdecl) |= DECL_READ_P (olddecl);
 
   /* Copy most of the decl-specific fields of NEWDECL into OLDDECL.
      But preserve OLDDECL's DECL_UID and DECL_CONTEXT.  */
@@ -3552,7 +3561,10 @@ finish_decl (tree decl, tree init, tree asmspec_tree)
 	}
 
       if (TREE_USED (type))
-	TREE_USED (decl) = 1;
+	{
+	  TREE_USED (decl) = 1;
+	  DECL_READ_P (decl) = 1;
+	}
     }
 
   /* If this is a function and an assembler name is specified, reset DECL_RTL
@@ -3695,6 +3707,7 @@ finish_decl (tree decl, tree init, tree asmspec_tree)
 	  /* Don't warn about decl unused; the cleanup uses it.  */
 	  TREE_USED (decl) = 1;
 	  TREE_USED (cleanup_decl) = 1;
+	  DECL_READ_P (decl) = 1;
 
 	  /* Initialize EH, if we've been told to do so.  */
 	  c_maybe_initialize_eh ();
@@ -3771,7 +3784,8 @@ build_compound_literal (tree type, tree init)
   tree complit;
   tree stmt;
 
-  if (type == error_mark_node)
+  if (type == error_mark_node
+      || init == error_mark_node)
     return error_mark_node;
 
   decl = build_decl (VAR_DECL, NULL_TREE, type);
@@ -3780,6 +3794,7 @@ build_compound_literal (tree type, tree init)
   TREE_STATIC (decl) = (current_scope == file_scope);
   DECL_CONTEXT (decl) = current_function_decl;
   TREE_USED (decl) = 1;
+  DECL_READ_P (decl) = 1;
   TREE_TYPE (decl) = type;
   TREE_READONLY (decl) = TYPE_READONLY (type);
   store_init_value (decl, init);
@@ -5291,6 +5306,11 @@ get_parm_info (bool ellipsis)
 	     type itself.  FUNCTION_DECLs appear when there is an implicit
 	     function declaration in the parameter list.  */
 
+	  /* When we reinsert this decl in the function body, we need
+	     to reconstruct whether it was marked as nested.  */
+	  gcc_assert (TREE_CODE (decl) == FUNCTION_DECL
+		      ? b->nested
+		      : !b->nested);
 	  TREE_CHAIN (decl) = others;
 	  others = decl;
 	  /* fall through */
@@ -6409,7 +6429,9 @@ store_parm_decls_newstyle (tree fndecl, const struct c_arg_info *arg_info)
       DECL_CONTEXT (decl) = current_function_decl;
       if (DECL_NAME (decl))
 	bind (DECL_NAME (decl), decl, current_scope,
-	      /*invisible=*/false, /*nested=*/false, UNKNOWN_LOCATION);
+	      /*invisible=*/false,
+	      /*nested=*/(TREE_CODE (decl) == FUNCTION_DECL),
+	      UNKNOWN_LOCATION);
     }
 
   /* And all the tag declarations.  */
@@ -6814,6 +6836,8 @@ finish_function (void)
       && !current_function_returns_value && !current_function_returns_null
       /* Don't complain if we are no-return.  */
       && !current_function_returns_abnormally
+      /* Don't complain if we are declared noreturn.  */
+      && !TREE_THIS_VOLATILE (fndecl)
       /* Don't warn for main().  */
       && !MAIN_NAME_P (DECL_NAME (fndecl))
       /* Or if they didn't actually specify a return type.  */
@@ -6825,6 +6849,25 @@ finish_function (void)
       warning (OPT_Wreturn_type,
 	       "no return statement in function returning non-void");
       TREE_NO_WARNING (fndecl) = 1;
+    }
+
+  /* Complain about parameters that are only set, but never otherwise used.  */
+  if (warn_unused_but_set_parameter)
+    {
+      tree decl;
+
+      for (decl = DECL_ARGUMENTS (fndecl);
+	   decl;
+	   decl = TREE_CHAIN (decl))
+	if (TREE_USED (decl)
+	    && TREE_CODE (decl) == PARM_DECL
+	    && !DECL_READ_P (decl)
+	    && DECL_NAME (decl)
+	    && !DECL_ARTIFICIAL (decl)
+	    && !TREE_NO_WARNING (decl))
+	  warning_at (DECL_SOURCE_LOCATION (decl),
+		      OPT_Wunused_but_set_parameter,
+		      "parameter %qD set but not used", decl);
     }
 
   /* Store the end of the function, so that we get good line number

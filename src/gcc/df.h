@@ -893,6 +893,7 @@ extern void df_simple_dataflow (enum df_flow_dir, df_init_function,
 extern void df_mark_solutions_dirty (void);
 extern bool df_get_bb_dirty (basic_block);
 extern void df_set_bb_dirty (basic_block);
+extern void df_set_bb_dirty_nonlr (basic_block);
 extern void df_compact_blocks (void);
 extern void df_bb_replace (int, basic_block);
 extern void df_bb_delete (int);
@@ -1083,8 +1084,8 @@ struct web_entry
 
 extern struct web_entry *unionfind_root (struct web_entry *);
 extern bool unionfind_union (struct web_entry *, struct web_entry *);
-extern void union_defs (df_ref,
-                        struct web_entry *, struct web_entry *,
+extern void union_defs (df_ref, struct web_entry *,
+			unsigned int *used, struct web_entry *,
 			bool (*fun) (struct web_entry *, struct web_entry *));
 
 #endif /* GCC_DF_H */

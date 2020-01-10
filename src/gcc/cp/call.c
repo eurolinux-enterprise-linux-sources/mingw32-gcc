@@ -145,7 +145,6 @@ static tree convert_like_real (conversion *, tree, tree, int, int, bool,
 			       bool, tsubst_flags_t);
 static void op_error (enum tree_code, enum tree_code, tree, tree,
 		      tree, const char *);
-static tree build_object_call (tree, tree, tsubst_flags_t);
 static tree resolve_args (tree);
 static struct z_candidate *build_user_type_conversion_1 (tree, tree, int);
 static void print_z_candidate (const char *, struct z_candidate *);
@@ -1218,6 +1217,8 @@ reference_binding (tree rto, tree rfrom, tree expr, bool c_cast_p, int flags)
 	  && CONSTRUCTOR_NELTS (expr) == 1)
 	{
 	  expr = CONSTRUCTOR_ELT (expr, 0)->value;
+	  if (error_operand_p (expr))
+	    return NULL;
 	  from = TREE_TYPE (expr);
 	}
     }
@@ -3192,7 +3193,7 @@ build_operator_new_call (tree fnname, tree args,
    return build_over_call (cand, LOOKUP_NORMAL, tf_warning_or_error);
 }
 
-static tree
+tree
 build_object_call (tree obj, tree args, tsubst_flags_t complain)
 {
   struct z_candidate *candidates = 0, *cand;
@@ -3645,6 +3646,8 @@ build_conditional_expr (tree arg1, tree arg2, tree arg3,
       && same_type_p (arg2_type, arg3_type))
     {
       result_type = arg2_type;
+      arg2 = mark_lvalue_use (arg2);
+      arg3 = mark_lvalue_use (arg3);
       goto valid_operands;
     }
 
@@ -4625,6 +4628,8 @@ convert_like_real (conversion *convs, tree expr, tree fn, int argnum,
 	tree convfn = cand->fn;
 	unsigned i;
 
+	expr = mark_rvalue_use (expr);
+
 	/* When converting from an init list we consider explicit
 	   constructors, but actually trying to call one is an error.  */
 	if (DECL_NONCONVERTING_P (convfn))
@@ -4657,6 +4662,7 @@ convert_like_real (conversion *convs, tree expr, tree fn, int argnum,
 	return expr;
       }
     case ck_identity:
+      expr = mark_rvalue_use (expr);
       if (BRACE_ENCLOSED_INITIALIZER_P (expr))
 	{
 	  int nelts = CONSTRUCTOR_NELTS (expr);
@@ -4741,7 +4747,7 @@ convert_like_real (conversion *convs, tree expr, tree fn, int argnum,
   switch (convs->kind)
     {
     case ck_rvalue:
-      expr = convert_bitfield_to_declared_type (expr);
+      expr = decay_conversion (expr);
       if (! MAYBE_CLASS_TYPE_P (totype))
 	return expr;
       /* Else fall through.  */
@@ -4956,6 +4962,8 @@ build_x_va_arg (tree expr, tree type)
 
   if (expr == error_mark_node || !type)
     return error_mark_node;
+
+  expr = mark_lvalue_use (expr);
 
   if (! pod_type_p (type))
     {
@@ -5391,7 +5399,8 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
     {
       tree a = TREE_VALUE (arg);
       if (magic_varargs_p (fn))
-	/* Do no conversions for magic varargs.  */;
+	/* Do no conversions for magic varargs.  */
+	a = mark_type_use (a);
       else
 	a = convert_arg_to_ellipsis (a);
       argarray[j++] = a;

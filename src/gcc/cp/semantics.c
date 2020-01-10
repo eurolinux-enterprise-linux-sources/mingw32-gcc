@@ -4,7 +4,7 @@
    and during the instantiation of template functions.
 
    Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-		 2008, 2009 Free Software Foundation, Inc.
+		 2008, 2009, 2010 Free Software Foundation, Inc.
    Written by Mark Mitchell (mmitchell@usa.net) based on code found
    formerly in parse.y and pt.c.
 
@@ -546,6 +546,7 @@ finish_goto_stmt (tree destination)
   else
     {
       /* The DESTINATION is being used as an rvalue.  */
+      destination = mark_rvalue_use (destination);
       if (!processing_template_decl)
 	{
 	  destination = decay_conversion (destination);
@@ -1238,6 +1239,8 @@ finish_asm_stmt (int volatile_p, tree string, tree output_operands,
 	     removed, then the output operand had a type of the proper width;
 	     otherwise we'll get an error.  Gross, but ...  */
 	  STRIP_NOPS (operand);
+
+	  operand = mark_lvalue_use (operand);
 
 	  if (!lvalue_or_else (operand, lv_asm, tf_warning_or_error))
 	    operand = error_mark_node;
@@ -2944,7 +2947,13 @@ finish_id_expression (tree id_expression,
 	    {
 	      tree r = convert_from_reference (decl);
 
-	      if (processing_template_decl && TYPE_P (scope))
+	      /* In a template, return a SCOPE_REF for most qualified-ids
+		 so that we can check access at instantiation time.  But if
+		 we're looking at a member of the current instantiation, we
+		 know we have access and building up the SCOPE_REF confuses
+		 non-type template argument handling.  */
+	      if (processing_template_decl && TYPE_P (scope)
+		  && !currently_open_class (scope))
 		r = build_qualified_name (TREE_TYPE (r),
 					  scope, decl,
 					  template_p);
@@ -3029,6 +3038,8 @@ finish_typeof (tree expr)
 
       return type;
     }
+
+  expr = mark_type_use (expr);
 
   type = unlowered_expr_type (expr);
 
@@ -3179,8 +3190,8 @@ emit_associated_thunks (tree fn)
 
 /* Generate RTL for FN.  */
 
-void
-expand_or_defer_fn (tree fn)
+bool
+expand_or_defer_fn_1 (tree fn)
 {
   /* When the parser calls us after finishing the body of a template
      function, we don't really want to expand the body.  */
@@ -3194,10 +3205,8 @@ expand_or_defer_fn (tree fn)
 	 is not a GC root.  */
       if (!function_depth)
 	ggc_collect ();
-      return;
+      return false;
     }
-
-  gcc_assert (gimple_body (fn));
 
   /* If this is a constructor or destructor body, we have to clone
      it.  */
@@ -3206,7 +3215,7 @@ expand_or_defer_fn (tree fn)
       /* We don't want to process FN again, so pretend we've written
 	 it out, even though we haven't.  */
       TREE_ASM_WRITTEN (fn) = 1;
-      return;
+      return false;
     }
 
   /* We make a decision about linkage for these functions at the end
@@ -3251,14 +3260,25 @@ expand_or_defer_fn (tree fn)
   /* There's no reason to do any of the work here if we're only doing
      semantic analysis; this code just generates RTL.  */
   if (flag_syntax_only)
-    return;
+    return false;
 
-  function_depth++;
+  return true;
+}
 
-  /* Expand or defer, at the whim of the compilation unit manager.  */
-  cgraph_finalize_function (fn, function_depth > 1);
+void
+expand_or_defer_fn (tree fn)
+{
+  gcc_assert (processing_template_decl || gimple_body (fn));
 
-  function_depth--;
+  if (expand_or_defer_fn_1 (fn))
+    {
+      function_depth++;
+
+      /* Expand or defer, at the whim of the compilation unit manager.  */
+      cgraph_finalize_function (fn, function_depth > 1);
+
+      function_depth--;
+    }
 }
 
 struct nrv_data
@@ -3333,14 +3353,15 @@ finalize_nrv (tree *tp, tree var, tree result)
 {
   struct nrv_data data;
 
-  /* Copy debugging information from VAR to RESULT.  */
+  /* Copy name from VAR to RESULT.  */
   DECL_NAME (result) = DECL_NAME (var);
-  DECL_ARTIFICIAL (result) = DECL_ARTIFICIAL (var);
-  DECL_IGNORED_P (result) = DECL_IGNORED_P (var);
-  DECL_SOURCE_LOCATION (result) = DECL_SOURCE_LOCATION (var);
-  DECL_ABSTRACT_ORIGIN (result) = DECL_ABSTRACT_ORIGIN (var);
   /* Don't forget that we take its address.  */
   TREE_ADDRESSABLE (result) = TREE_ADDRESSABLE (var);
+  /* Finally set DECL_VALUE_EXPR to avoid assigning
+     a stack slot at -O0 for the original var and debug info
+     uses RESULT location for VAR.  */
+  SET_DECL_VALUE_EXPR (var, result);
+  DECL_HAS_VALUE_EXPR_P (var) = 1;
 
   data.var = var;
   data.result = result;
@@ -4574,7 +4595,13 @@ finish_decltype_type (tree expr, bool id_expression_or_member_access_p)
       return error_mark_node;
     }
 
-  if (type_dependent_expression_p (expr))
+  if (type_dependent_expression_p (expr)
+      /* In a template, a COMPONENT_REF has an IDENTIFIER_NODE for op1 even
+	 if it isn't dependent, so that we can check access control at
+	 instantiation time, so defer the decltype as well (PR 42277).  */
+      || (id_expression_or_member_access_p
+	  && processing_template_decl
+	  && TREE_CODE (expr) == COMPONENT_REF))
     {
       if (id_expression_or_member_access_p)
 	{
@@ -4662,6 +4689,7 @@ finish_decltype_type (tree expr, bool id_expression_or_member_access_p)
         case PARM_DECL:
         case RESULT_DECL:
         case TEMPLATE_PARM_INDEX:
+	  expr = mark_type_use (expr);
           type = TREE_TYPE (expr);
           break;
 
@@ -4670,6 +4698,7 @@ finish_decltype_type (tree expr, bool id_expression_or_member_access_p)
           break;
 
         case COMPONENT_REF:
+	  mark_type_use (expr);
           type = is_bitfield_expr_with_lowered_type (expr);
           if (!type)
             type = TREE_TYPE (TREE_OPERAND (expr, 1));

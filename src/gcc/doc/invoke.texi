@@ -261,7 +261,7 @@ Objective-C and Objective-C++ Dialects}.
 -Wunknown-pragmas  -Wno-pragmas -Wunreachable-code @gol
 -Wunused  -Wunused-function  -Wunused-label  -Wunused-parameter @gol
 -Wunused-value  -Wunused-variable @gol
--Wvariadic-macros -Wvla @gol
+-Wunused-but-set-parameter -Wunused-but-set-variable -Wvariadic-macros -Wvla @gol
 -Wvolatile-register-var  -Wwrite-strings}
 
 @item C and Objective-C-only Warning Options
@@ -308,7 +308,7 @@ Objective-C and Objective-C++ Dialects}.
 -frandom-seed=@var{string} -fsched-verbose=@var{n} @gol
 -fsel-sched-verbose -fsel-sched-dump-cfg -fsel-sched-pipelining-verbose @gol
 -ftest-coverage  -ftime-report -fvar-tracking @gol
--fvar-tracking-assigments  -fvar-tracking-assignments-toggle @gol
+-fvar-tracking-assignments  -fvar-tracking-assignments-toggle @gol
 -g  -g@var{level}  -gtoggle  -gcoff -gdwarf-@var{version} @gol
 -ggdb  -gstabs  -gstabs+  -gstrict-dwarf  -gno-strict-dwarf @gol
 -gvms  -gxcoff  -gxcoff+ @gol
@@ -581,8 +581,8 @@ Objective-C and Objective-C++ Dialects}.
 -mincoming-stack-boundary=@var{num}
 -mcld -mcx16 -msahf -mmovbe -mcrc32 -mrecip @gol
 -mmmx  -msse  -msse2 -msse3 -mssse3 -msse4.1 -msse4.2 -msse4 -mavx @gol
--maes -mpclmul @gol
--msse4a -m3dnow -mpopcnt -mabm -mfma4 -mxop -mlwp @gol
+-maes -mpclmul -mfsgsbase -mrdrnd -mf16c -mfused-madd @gol
+-msse4a -m3dnow -mpopcnt -mabm -mbmi -mtbm -mfma4 -mxop -mlwp @gol
 -mthreads  -mno-align-stringops  -minline-all-stringops @gol
 -minline-stringops-dynamically -mstringop-strategy=@var{alg} @gol
 -mpush-args  -maccumulate-outgoing-args  -m128bit-long-double @gol
@@ -592,6 +592,10 @@ Objective-C and Objective-C++ Dialects}.
 -mcmodel=@var{code-model} @gol
 -m32  -m64 -mlarge-data-threshold=@var{num} @gol
 -msse2avx}
+
+@emph{i386 and x86-64 Windows Options}
+@gccoptlist{-mconsole -mcygwin -mno-cygwin -mdll
+-mnop-fun-dllimport -mthread -mwin32 -mwindows}
 
 @emph{IA-64 Options}
 @gccoptlist{-mbig-endian  -mlittle-endian  -mgnu-as  -mgnu-ld  -mno-pic @gol
@@ -714,6 +718,7 @@ See RS/6000 and PowerPC Options.
 @emph{RS/6000 and PowerPC Options}
 @gccoptlist{-mcpu=@var{cpu-type} @gol
 -mtune=@var{cpu-type} @gol
+-mcmodel=@var{code-model} @gol
 -mpower  -mno-power  -mpower2  -mno-power2 @gol
 -mpowerpc  -mpowerpc64  -mno-powerpc @gol
 -maltivec  -mno-altivec @gol
@@ -830,10 +835,6 @@ See RS/6000 and PowerPC Options.
 
 @emph{x86-64 Options}
 See i386 and x86-64 Options.
-
-@emph{i386 and x86-64 Windows Options}
-@gccoptlist{-mconsole -mcygwin -mno-cygwin -mdll
--mnop-fun-dllimport -mthread -mwin32 -mwindows}
 
 @emph{Xstormy16 Options}
 @gccoptlist{-msim}
@@ -3196,6 +3197,24 @@ Warn if any trigraphs are encountered that might change the meaning of
 the program (trigraphs within comments are not warned about).
 This warning is enabled by @option{-Wall}.
 
+@item -Wunused-but-set-parameter
+@opindex Wunused-but-set-parameter
+@opindex Wno-unused-but-set-parameter
+Warn whenever a function parameter is assigned to, but otherwise unused
+(aside from its declaration).
+
+To suppress this warning use the @samp{unused} attribute
+(@pxref{Variable Attributes}).
+
+@item -Wunused-but-set-variable
+@opindex Wunused-but-set-variable
+@opindex Wno-unused-but-set-variable
+Warn whenever a local variable is assigned to, but otherwise unused
+(aside from its declaration).
+
+To suppress this warning use the @samp{unused} attribute
+(@pxref{Variable Attributes}).
+
 @item -Wunused-function
 @opindex Wunused-function
 @opindex Wno-unused-function
@@ -5552,7 +5571,8 @@ invoking @option{-O2} on programs that use computed gotos.
 Optimize yet more.  @option{-O3} turns on all optimizations specified
 by @option{-O2} and also turns on the @option{-finline-functions},
 @option{-funswitch-loops}, @option{-fpredictive-commoning},
-@option{-fgcse-after-reload} and @option{-ftree-vectorize} options.
+@option{-fgcse-after-reload}, @option{-ftree-vectorize} and
+@option{-fipa-cp-clone} options.
 
 @item -O0
 @opindex O0
@@ -6243,7 +6263,7 @@ Enabled by default at @option{-O} and higher.
 @opindex fipa-struct-reorg
 Perform structure reorganization optimization, that change C-like structures 
 layout in order to better utilize spatial locality.  This transformation is 
-affective for programs containing arrays of structures.  Available in two 
+effective for programs containing arrays of structures.  Available in two 
 compilation modes: profile-based (enabled with @option{-fprofile-generate})
 or static (which uses built-in heuristics).  Require @option{-fipa-type-escape}
 to provide the safety of this transformation.  It works only in whole program
@@ -7554,6 +7574,9 @@ The maximum number of insns of a completely peeled loop.
 @item max-completely-peel-times
 The maximum number of iterations of a loop to be suitable for complete peeling.
 
+@item max-completely-peel-loop-nest-depth
+The maximum depth of a loop nest suitable for complete peeling.
+
 @item max-unswitch-insns
 The maximum number of insns of an unswitched loop.
 
@@ -7936,6 +7959,15 @@ in amount of needed compile time memory, with very large loops.  Loops
 with more basic blocks than this parameter won't have loop invariant
 motion optimization performed on them.  The default value of the
 parameter is 1000 for -O1 and 10000 for -O2 and above.
+
+@item max-vartrack-size
+Sets a maximum number of hash table slots to use during variable
+tracking dataflow analysis of any function.  If this limit is exceeded
+with variable tracking at assignments enabled, analysis for that
+function is retried without it, after removing all debug insns from
+the function.  If the limit is exceeded even without debug insns, var
+tracking analysis is completely disabled for the function.  Setting
+the parameter to zero makes it unlimited.
 
 @item min-nondebug-insn-uid
 Use uids starting at this parameter for nondebug insns.  The range below
@@ -11450,6 +11482,12 @@ preferred alignment to @option{-mpreferred-stack-boundary=2}.
 @itemx -mno-aes
 @itemx -mpclmul
 @itemx -mno-pclmul
+@itemx -mfsgsbase
+@itemx -mno-fsgsbase
+@itemx -mrdrnd
+@itemx -mno-rdrnd
+@itemx -mf16c
+@itemx -mno-f16c
 @itemx -msse4a
 @itemx -mno-sse4a
 @itemx -mfma4
@@ -11464,6 +11502,10 @@ preferred alignment to @option{-mpreferred-stack-boundary=2}.
 @itemx -mno-popcnt
 @itemx -mabm
 @itemx -mno-abm
+@itemx -mbmi
+@itemx -mno-bmi
+@itemx -mtbm
+@itemx -mno-tbm
 @opindex mmmx
 @opindex mno-mmx
 @opindex msse
@@ -11471,8 +11513,8 @@ preferred alignment to @option{-mpreferred-stack-boundary=2}.
 @opindex m3dnow
 @opindex mno-3dnow
 These switches enable or disable the use of instructions in the MMX,
-SSE, SSE2, SSE3, SSSE3, SSE4.1, AVX, AES, PCLMUL, SSE4A, FMA4, XOP,
-LWP, ABM or 3DNow!@: extended instruction sets.
+SSE, SSE2, SSE3, SSSE3, SSE4.1, AVX, AES, PCLMUL, FSGSBASE, RDRND,
+F16C, SSE4A, FMA4, XOP, LWP, ABM, BMI, or 3DNow!@: extended instruction sets.
 These extensions are also available as built-in functions: see
 @ref{X86 Built-in Functions}, for details of the functions enabled and
 disabled by these switches.
@@ -11490,6 +11532,13 @@ perform runtime CPU detection must compile separate files for each
 supported architecture, using the appropriate flags.  In particular,
 the file containing the CPU detection code should be compiled without
 these options.
+
+@item -mfused-madd
+@itemx -mno-fused-madd
+@opindex mfused-madd
+@opindex mno-fused-madd
+Do (don't) generate code that uses the fused multiply/add or multiply/subtract
+instructions.  The default is to use these instructions.
 
 @item -mcld
 @opindex mcld
@@ -11696,6 +11745,71 @@ be statically or dynamically linked.
 Generate code for the large model: This model makes no assumptions
 about addresses and sizes of sections.
 @end table
+
+@node i386 and x86-64 Windows Options
+@subsection i386 and x86-64 Windows Options
+@cindex i386 and x86-64 Windows Options
+
+These additional options are available for Windows targets:
+
+@table @gcctabopt
+@item -mconsole
+@opindex mconsole
+This option is available for Cygwin and MinGW targets.  It
+specifies that a console application is to be generated, by
+instructing the linker to set the PE header subsystem type
+required for console applications.
+This is the default behaviour for Cygwin and MinGW targets.
+
+@item -mcygwin
+@opindex mcygwin
+This option is available for Cygwin targets.  It specifies that
+the Cygwin internal interface is to be used for predefined
+preprocessor macros, C runtime libraries and related linker
+paths and options.  For Cygwin targets this is the default behaviour.
+This option is deprecated and will be removed in a future release.
+
+@item -mno-cygwin
+@opindex mno-cygwin
+This option is available for Cygwin targets.  It specifies that
+the MinGW internal interface is to be used instead of Cygwin's, by
+setting MinGW-related predefined macros and linker paths and default
+library options.
+This option is deprecated and will be removed in a future release.
+
+@item -mdll
+@opindex mdll
+This option is available for Cygwin and MinGW targets.  It
+specifies that a DLL - a dynamic link library - is to be
+generated, enabling the selection of the required runtime
+startup object and entry point.
+
+@item -mnop-fun-dllimport
+@opindex mnop-fun-dllimport
+This option is available for Cygwin and MinGW targets.  It
+specifies that the dllimport attribute should be ignored.
+
+@item -mthread
+@opindex mthread
+This option is available for MinGW targets. It specifies
+that MinGW-specific thread support is to be used.
+
+@item -mwin32
+@opindex mwin32
+This option is available for Cygwin and MinGW targets.  It
+specifies that the typical Windows pre-defined macros are to
+be set in the pre-processor, but does not influence the choice
+of runtime library/startup code.
+
+@item -mwindows
+@opindex mwindows
+This option is available for Cygwin and MinGW targets.  It
+specifies that a GUI application is to be generated by
+instructing the linker to set the PE header subsystem type
+appropriately.
+@end table
+
+See also under @ref{i386 and x86-64 Options} for standard options.
 
 @node IA-64 Options
 @subsection IA-64 Options
@@ -13916,6 +14030,22 @@ values for @var{cpu_type} are used for @option{-mtune} as for
 architecture, registers, and mnemonics set by @option{-mcpu}, but the
 scheduling parameters set by @option{-mtune}.
 
+@item -mcmodel=small
+@opindex mcmodel=small
+Generate PowerPC64 code for the small model: The TOC is limited to
+64k.
+
+@item -mcmodel=medium
+@opindex mcmodel=medium
+Generate PowerPC64 code for the medium model: The TOC and other static
+data may be up to a total of 4G in size.
+
+@item -mcmodel=large
+@opindex mcmodel=large
+Generate PowerPC64 code for the large model: The TOC may be up to 4G
+in size.  Other data and code is only limited by the 64-bit address
+space.
+
 @item -mswdiv
 @itemx -mno-swdiv
 @opindex mswdiv
@@ -15653,71 +15783,6 @@ is defined for compatibility with Diab.
 @cindex x86-64 options
 
 These are listed under @xref{i386 and x86-64 Options}.
-
-@node i386 and x86-64 Windows Options
-@subsection i386 and x86-64 Windows Options
-@cindex i386 and x86-64 Windows Options
-
-These additional options are available for Windows targets:
-
-@table @gcctabopt
-@item -mconsole
-@opindex mconsole
-This option is available for Cygwin and MinGW targets.  It
-specifies that a console application is to be generated, by
-instructing the linker to set the PE header subsystem type
-required for console applications.
-This is the default behaviour for Cygwin and MinGW targets.
-
-@item -mcygwin
-@opindex mcygwin
-This option is available for Cygwin targets.  It specifies that
-the Cygwin internal interface is to be used for predefined
-preprocessor macros, C runtime libraries and related linker
-paths and options.  For Cygwin targets this is the default behaviour.
-This option is deprecated and will be removed in a future release.
-
-@item -mno-cygwin
-@opindex mno-cygwin
-This option is available for Cygwin targets.  It specifies that
-the MinGW internal interface is to be used instead of Cygwin's, by
-setting MinGW-related predefined macros and linker paths and default
-library options.
-This option is deprecated and will be removed in a future release.
-
-@item -mdll
-@opindex mdll
-This option is available for Cygwin and MinGW targets.  It
-specifies that a DLL - a dynamic link library - is to be
-generated, enabling the selection of the required runtime
-startup object and entry point.
-
-@item -mnop-fun-dllimport
-@opindex mnop-fun-dllimport
-This option is available for Cygwin and MinGW targets.  It
-specifies that the dllimport attribute should be ignored.
-
-@item -mthread
-@opindex mthread
-This option is available for MinGW targets. It specifies
-that MinGW-specific thread support is to be used.
-
-@item -mwin32
-@opindex mwin32
-This option is available for Cygwin and MinGW targets.  It
-specifies that the typical Windows pre-defined macros are to
-be set in the pre-processor, but does not influence the choice
-of runtime library/startup code.
-
-@item -mwindows
-@opindex mwindows
-This option is available for Cygwin and MinGW targets.  It
-specifies that a GUI application is to be generated by
-instructing the linker to set the PE header subsystem type
-appropriately.
-@end table
-
-See also under @ref{i386 and x86-64 Options} for standard options.
 
 @node Xstormy16 Options
 @subsection Xstormy16 Options

@@ -450,6 +450,9 @@ struct tree_common GTY(())
 
        CALL_CANNOT_INLINE_P in
            CALL_EXPR
+ 
+       ENUM_IS_SCOPED in
+	   ENUMERAL_TYPE
 
    public_flag:
 
@@ -493,6 +496,9 @@ struct tree_common GTY(())
            OMP_PARALLEL
        OMP_CLAUSE_PRIVATE_OUTER_REF in
 	   OMP_CLAUSE_PRIVATE
+
+       TYPE_REF_IS_RVALUE in
+	   REFERENCE_TYPE
 
    protected_flag:
 
@@ -1158,6 +1164,9 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
 /* Used to mark a CALL_EXPR as not suitable for inlining.  */
 #define CALL_CANNOT_INLINE_P(NODE) (CALL_EXPR_CHECK (NODE)->base.static_flag)
 
+/* Used to mark scoped enums.  */
+#define ENUM_IS_SCOPED(NODE) (ENUMERAL_TYPE_CHECK (NODE)->base.static_flag)
+
 /* In an expr node (usually a conversion) this means the node was made
    implicitly and should not lead to any sort of warning.  In a decl node,
    warnings concerning the decl should be suppressed.  This is used at
@@ -1308,6 +1317,9 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
   (TREE_CHECK3 (NODE, VAR_DECL, PARM_DECL, \
 		RESULT_DECL)->decl_common.decl_by_reference_flag)
 
+#define DECL_READ_P(NODE) \
+  (TREE_CHECK2 (NODE, VAR_DECL, PARM_DECL)->decl_common.decl_read_flag)
+
 /* In a CALL_EXPR, means that the call is the jump from a thunk to the
    thunked-to function.  */
 #define CALL_FROM_THUNK_P(NODE) (CALL_EXPR_CHECK (NODE)->base.protected_flag)
@@ -1327,6 +1339,10 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
 #define TREE_PRIVATE(NODE) ((NODE)->base.private_flag)
 /* Used in classes in C++. */
 #define TREE_PROTECTED(NODE) ((NODE)->base.protected_flag)
+
+/* True if reference type NODE is a C++ rvalue reference.  */
+#define TYPE_REF_IS_RVALUE(NODE) \
+  (REFERENCE_TYPE_CHECK (NODE)->base.private_flag)
 
 /* Nonzero in a _DECL if the use of the name is defined as a
    deprecated feature by __attribute__((deprecated)).  */
@@ -2737,8 +2753,9 @@ struct tree_decl_common GTY(())
   unsigned no_tbaa_flag : 1;
   /* In VAR_DECL, PARM_DECL and RESULT_DECL, this is DECL_BY_REFERENCE.  */
   unsigned decl_by_reference_flag : 1;
-  /* Padding so that 'align' can be on a 32-bit boundary.  */
-  unsigned decl_common_unused : 1;
+  /* In VAR_DECL and PARM_DECL set when the decl has been used except for
+     being set.  */
+  unsigned decl_read_flag : 1;
 
   unsigned int align : 24;
   /* DECL_OFFSET_ALIGN, used only for FIELD_DECLs.  */
@@ -5071,6 +5088,7 @@ extern unsigned int update_alignment_for_field (record_layout_info, tree,
                                                 unsigned int);
 /* varasm.c */
 extern void make_decl_rtl (tree);
+extern rtx make_decl_rtl_for_debug (tree);
 extern void make_decl_one_only (tree);
 extern int supports_one_only (void);
 extern void resolve_unique_section (tree, int, int);
@@ -5225,6 +5243,18 @@ struct tree_map GTY(())
 #define tree_map_eq tree_map_base_eq
 extern unsigned int tree_map_hash (const void *);
 #define tree_map_marked_p tree_map_base_marked_p
+
+/* Map from a decl tree to another tree.  */
+
+struct tree_decl_map GTY(())
+{
+  struct tree_map_base base;
+  tree to;
+};
+
+#define tree_decl_map_eq tree_map_base_eq
+extern unsigned int tree_decl_map_hash (const void *);
+#define tree_decl_map_marked_p tree_map_base_marked_p
 
 /* Map from a tree to an int.  */
 

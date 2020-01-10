@@ -110,7 +110,7 @@ decode_specification_statement (void)
   match ("import", gfc_match_import, ST_IMPORT);
   match ("use", gfc_match_use, ST_USE);
 
-  if (gfc_current_block ()->ts.type != BT_DERIVED)
+  if (gfc_current_block ()->result->ts.type != BT_DERIVED)
     goto end_of_block;
 
   match (NULL, gfc_match_st_function, ST_STATEMENT_FUNCTION);
@@ -808,6 +808,7 @@ next_statement (void)
   gfc_new_block = NULL;
 
   gfc_current_ns->old_cl_list = gfc_current_ns->cl_list;
+  gfc_current_ns->old_equiv = gfc_current_ns->equiv;
   for (;;)
     {
       gfc_statement_label = NULL;
@@ -1528,6 +1529,9 @@ reject_statement (void)
   /* Revert to the previous charlen chain.  */
   gfc_free_charlen (gfc_current_ns->cl_list, gfc_current_ns->old_cl_list);
   gfc_current_ns->cl_list = gfc_current_ns->old_cl_list;
+
+  gfc_free_equiv_until (gfc_current_ns->equiv, gfc_current_ns->old_equiv);
+  gfc_current_ns->equiv = gfc_current_ns->old_equiv;
 
   gfc_new_block = NULL;
   gfc_undo_symbols ();
@@ -3333,6 +3337,7 @@ gfc_fixup_sibling_symbols (gfc_symbol *sym, gfc_namespace *siblings)
 		  || (old_sym->ts.type != BT_UNKNOWN
 			&& !old_sym->attr.implicit_type)
 		  || old_sym->attr.flavor == FL_PARAMETER
+		  || old_sym->attr.use_assoc
 		  || old_sym->attr.in_common
 		  || old_sym->attr.in_equivalence
 		  || old_sym->attr.data

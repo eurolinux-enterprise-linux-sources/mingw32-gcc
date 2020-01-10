@@ -191,10 +191,32 @@ ipcp_analyze_node (struct cgraph_node *node)
 static void
 ipcp_update_cloned_node (struct cgraph_node *new_node)
 {
+  basic_block bb;
+  gimple_stmt_iterator gsi;
+
   /* We might've introduced new direct calls.  */
   push_cfun (DECL_STRUCT_FUNCTION (new_node->decl));
   current_function_decl = new_node->decl;
-  rebuild_cgraph_edges ();
+
+  FOR_EACH_BB (bb)
+    for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+      {
+	gimple stmt = gsi_stmt (gsi);
+	tree decl;
+
+	if (is_gimple_call (stmt)
+	    && (decl = gimple_call_fndecl (stmt))
+	    && !cgraph_edge (new_node, stmt))
+	  {
+	    struct cgraph_edge *new_edge;
+
+	    new_edge = cgraph_create_edge (new_node, cgraph_node (decl), stmt,
+					   bb->count,
+					   compute_call_stmt_bb_frequency (bb),
+					   bb->loop_depth);
+	    new_edge->indirect_call = 1;
+	  }
+      }
 
   /* Indirect inlinng rely on fact that we've already analyzed
      the body..  */
@@ -487,7 +509,11 @@ ipcp_initialize_node_lattices (struct cgraph_node *node)
   if (ipa_is_called_with_var_arguments (info))
     type = IPA_BOTTOM;
   else if (!node->needed)
-    type = IPA_TOP;
+    {
+      type = IPA_TOP;
+      if (node->same_comdat_group && !node->callers)
+	type = IPA_BOTTOM;
+    }
   /* When cloning is allowed, we can assume that externally visible functions
      are not called.  We will compensate this by cloning later.  */
   else if (ipcp_cloning_candidate_p (node))
@@ -960,7 +986,9 @@ ipcp_update_callgraph (void)
 	for (cs = node->callers; cs; cs = next)
 	  {
 	    next = cs->next_caller;
-	    if (ipcp_node_is_clone (cs->caller) || !ipcp_need_redirect_p (cs))
+	    if (!cs->indirect_call
+		&& (ipcp_node_is_clone (cs->caller)
+		    || !ipcp_need_redirect_p (cs)))
 	      {
 		gimple new_stmt;
 		gimple_stmt_iterator gsi;
@@ -1046,7 +1074,8 @@ ipcp_estimate_growth (struct cgraph_node *node)
   struct cgraph_edge *cs;
   int redirectable_node_callers = 0;
   int removable_args = 0;
-  bool need_original = node->needed;
+  bool need_original = node->needed
+		       || (node->same_comdat_group && !node->callers);
   struct ipa_node_params *info;
   int i, count;
   int growth;
@@ -1235,7 +1264,7 @@ ipcp_insert_stage (void)
       for (cs = node->callers; cs != NULL; cs = cs->next_caller)
 	if (cs->caller == node || ipcp_need_redirect_p (cs))
 	  break;
-      if (!cs && !node->needed)
+      if (!cs && !node->needed && !(node->same_comdat_group && !node->callers))
 	bitmap_set_bit (dead_nodes, node->uid);
 
       info = IPA_NODE_REF (node);

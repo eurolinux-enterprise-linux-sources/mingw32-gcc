@@ -225,12 +225,11 @@ initialize_hash_element (gimple stmt, tree lhs,
     {
       enum tree_code subcode = gimple_assign_rhs_code (stmt);
 
-      expr->type = NULL_TREE;
-      
       switch (get_gimple_rhs_class (subcode))
         {
         case GIMPLE_SINGLE_RHS:
           expr->kind = EXPR_SINGLE;
+	  expr->type = TREE_TYPE (gimple_assign_rhs1 (stmt));
           expr->ops.single.rhs = gimple_assign_rhs1 (stmt);
           break;
         case GIMPLE_UNARY_RHS:
@@ -1764,7 +1763,7 @@ record_edge_info (basic_block bb)
               edge_info = allocate_edge_info (false_edge);
               record_conditions (edge_info, inverted, cond);
 
-              if (code == NE_EXPR)
+              if (TREE_CODE (inverted) == EQ_EXPR)
                 {
                   edge_info->lhs = op1;
                   edge_info->rhs = op0;
@@ -1791,7 +1790,7 @@ record_edge_info (basic_block bb)
               edge_info = allocate_edge_info (false_edge);
               record_conditions (edge_info, inverted, cond);
 
-              if (TREE_CODE (cond) == NE_EXPR)
+              if (TREE_CODE (inverted) == EQ_EXPR)
                 {
                   edge_info->lhs = op0;
                   edge_info->rhs = op1;
@@ -2475,7 +2474,7 @@ avail_expr_eq (const void *p1, const void *p2)
 /* Given PHI, return its RHS if the PHI is a degenerate, otherwise return
    NULL.  */
 
-static tree
+tree
 degenerate_phi_result (gimple phi)
 {
   tree lhs = gimple_phi_result (phi);
@@ -2491,9 +2490,18 @@ degenerate_phi_result (gimple phi)
 
       if (arg == lhs)
 	continue;
+      else if (!arg)
+	break;
       else if (!val)
 	val = arg;
-      else if (!operand_equal_p (arg, val, 0))
+      else if (arg == val)
+	continue;
+      /* We bring in some of operand_equal_p not only to speed things
+	 up, but also to avoid crashing when dereferencing the type of
+	 a released SSA name.  */
+      else if (TREE_CODE (val) != TREE_CODE (arg)
+	       || TREE_CODE (val) == SSA_NAME
+	       || !operand_equal_p (arg, val, 0))
 	break;
     }
   return (i == gimple_phi_num_args (phi) ? val : NULL);
@@ -2598,6 +2606,20 @@ propagate_rhs_into_lhs (gimple stmt, tree lhs, tree rhs, bitmap interesting_name
 	  /* It's not always safe to propagate into an ASM_EXPR.  */
 	  if (gimple_code (use_stmt) == GIMPLE_ASM
               && ! may_propagate_copy_into_asm (lhs))
+	    {
+	      all = false;
+	      continue;
+	    }
+
+	  /* It's not ok to propagate into the definition stmt of RHS.
+		<bb 9>:
+		  # prephitmp.12_36 = PHI <g_67.1_6(9)>
+		  g_67.1_6 = prephitmp.12_36;
+		  goto <bb 9>;
+	     While this is strictly all dead code we do not want to
+	     deal with this here.  */
+	  if (TREE_CODE (rhs) == SSA_NAME
+	      && SSA_NAME_DEF_STMT (rhs) == use_stmt)
 	    {
 	      all = false;
 	      continue;

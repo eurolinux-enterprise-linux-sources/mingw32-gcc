@@ -1,5 +1,5 @@
 /* Tree inlining.
-   Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Alexandre Oliva <aoliva@redhat.com>
 
@@ -172,6 +172,12 @@ insert_debug_decl_map (copy_body_data *id, tree key, tree value)
   *pointer_map_insert (id->debug_map, key) = value;
 }
 
+/* If nonzero, we're remapping the contents of inlined debug
+   statements.  If negative, an error has occurred, such as a
+   reference to a variable that isn't available in the inlined
+   context.  */
+static int processing_debug_stmt = 0;
+
 /* Construct new SSA name for old NAME. ID is the inline context.  */
 
 static tree
@@ -185,6 +191,12 @@ remap_ssa_name (tree name, copy_body_data *id)
   n = (tree *) pointer_map_contains (id->decl_map, name);
   if (n)
     return unshare_expr (*n);
+
+  if (processing_debug_stmt)
+    {
+      processing_debug_stmt = -1;
+      return name;
+    }
 
   /* Do not set DEF_STMT yet as statement is not copied yet. We do that
      in copy_bb.  */
@@ -244,12 +256,6 @@ remap_ssa_name (tree name, copy_body_data *id)
     insert_decl_map (id, name, new_tree);
   return new_tree;
 }
-
-/* If nonzero, we're remapping the contents of inlined debug
-   statements.  If negative, an error has occurred, such as a
-   reference to a variable that isn't available in the inlined
-   context.  */
-int processing_debug_stmt = 0;
 
 /* Remap DECL during the copying of the BLOCK tree for the function.  */
 
@@ -529,7 +535,6 @@ remap_decls (tree decls, VEC(tree,gc) **nonlocalized_list, copy_body_data *id)
   for (old_var = decls; old_var; old_var = TREE_CHAIN (old_var))
     {
       tree new_var;
-      tree origin_var = DECL_ORIGIN (old_var);
 
       if (can_be_nonlocal (old_var, id))
 	{
@@ -540,7 +545,7 @@ remap_decls (tree decls, VEC(tree,gc) **nonlocalized_list, copy_body_data *id)
 	  if ((!optimize || debug_info_level > DINFO_LEVEL_TERSE)
 	      && !DECL_IGNORED_P (old_var)
 	      && nonlocalized_list)
-	    VEC_safe_push (tree, gc, *nonlocalized_list, origin_var);
+	    VEC_safe_push (tree, gc, *nonlocalized_list, old_var);
 	  continue;
 	}
 
@@ -558,13 +563,26 @@ remap_decls (tree decls, VEC(tree,gc) **nonlocalized_list, copy_body_data *id)
 	  if ((!optimize || debug_info_level > DINFO_LEVEL_TERSE)
 	      && !DECL_IGNORED_P (old_var)
 	      && nonlocalized_list)
-	    VEC_safe_push (tree, gc, *nonlocalized_list, origin_var);
+	    VEC_safe_push (tree, gc, *nonlocalized_list, old_var);
 	}
       else
 	{
 	  gcc_assert (DECL_P (new_var));
 	  TREE_CHAIN (new_var) = new_decls;
 	  new_decls = new_var;
+ 
+	  /* Also copy value-expressions.  */
+	  if (TREE_CODE (new_var) == VAR_DECL
+	      && DECL_HAS_VALUE_EXPR_P (new_var))
+	    {
+	      tree tem = DECL_VALUE_EXPR (new_var);
+	      bool old_regimplify = id->regimplify;
+	      id->remapping_type_depth++;
+	      walk_tree (&tem, copy_tree_body_r, id, NULL);
+	      id->remapping_type_depth--;
+	      id->regimplify = old_regimplify;
+	      SET_DECL_VALUE_EXPR (new_var, tem);
+	    }
 	}
     }
 
@@ -1077,8 +1095,9 @@ copy_tree_body_r (tree *tp, int *walk_subtrees, void *data)
 	      tree *n;
 	      n = (tree *) pointer_map_contains (id->decl_map,
 						 TREE_BLOCK (*tp));
-	      gcc_assert (n);
-	      new_block = *n;
+	      gcc_assert (n || id->remapping_type_depth != 0);
+	      if (n)
+		new_block = *n;
 	    }
 	  TREE_BLOCK (*tp) = new_block;
 	}
@@ -1689,9 +1708,10 @@ update_ssa_across_abnormal_edges (basic_block bb, basic_block ret_bb,
 
 /* Copy edges from BB into its copy constructed earlier, scale profile
    accordingly.  Edges will be taken care of later.  Assume aux
-   pointers to point to the copies of each BB.  */
+   pointers to point to the copies of each BB.  Return true if any
+   debug stmts are left after a statement that must end the basic block.  */
 
-static void
+static bool
 copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb)
 {
   basic_block new_bb = (basic_block) bb->aux;
@@ -1699,6 +1719,7 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb)
   edge old_edge;
   gimple_stmt_iterator si;
   int flags;
+  bool need_debug_cleanup = false;
 
   /* Use the indices from the original blocks to create edges for the
      new ones.  */
@@ -1719,7 +1740,7 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb)
       }
 
   if (bb->index == ENTRY_BLOCK || bb->index == EXIT_BLOCK)
-    return;
+    return false;
 
   for (si = gsi_start_bb (new_bb); !gsi_end_p (si);)
     {
@@ -1754,6 +1775,13 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb)
       if (can_throw || nonlocal_goto)
 	{
 	  if (!gsi_end_p (si))
+	    {
+	      while (!gsi_end_p (si) && is_gimple_debug (gsi_stmt (si)))
+		gsi_next (&si);
+	      if (gsi_end_p (si))
+		need_debug_cleanup = true;
+	    }
+	  if (!gsi_end_p (si))
 	    /* Note that bb's predecessor edges aren't necessarily
 	       right at this point; split_block doesn't care.  */
 	    {
@@ -1776,6 +1804,7 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb)
 	update_ssa_across_abnormal_edges (gimple_bb (copy_stmt), ret_bb,
 					  can_throw, nonlocal_goto);
     }
+  return need_debug_cleanup;
 }
 
 /* Copy the PHIs.  All blocks and edges are copied, some blocks
@@ -1790,12 +1819,13 @@ copy_phis_for_bb (basic_block bb, copy_body_data *id)
   edge_iterator ei;
   gimple phi;
   gimple_stmt_iterator si;
+  edge new_edge;
+  bool inserted = false;
 
   for (si = gsi_start (phi_nodes (bb)); !gsi_end_p (si); gsi_next (&si))
     {
       tree res, new_res;
       gimple new_phi;
-      edge new_edge;
 
       phi = gsi_stmt (si);
       res = PHI_RESULT (phi);
@@ -1824,12 +1854,18 @@ copy_phis_for_bb (basic_block bb, copy_body_data *id)
 		{
 		  gimple_seq stmts = NULL;
 		  new_arg = force_gimple_operand (new_arg, &stmts, true, NULL);
-		  gsi_insert_seq_on_edge_immediate (new_edge, stmts);
+		  gsi_insert_seq_on_edge (new_edge, stmts);
+		  inserted = true;
 		}
 	      add_phi_arg (new_phi, new_arg, new_edge);
 	    }
 	}
     }
+
+  /* Commit the delayed edge insertions.  */
+  if (inserted)
+    FOR_EACH_EDGE (new_edge, ei, new_bb->preds)
+      gsi_commit_one_edge_insert (new_edge, NULL);
 }
 
 
@@ -1922,6 +1958,63 @@ initialize_cfun (tree new_fndecl, tree callee_fndecl, gcov_type count,
   pop_cfun ();
 }
 
+/* Helper function for copy_cfg_body.  Move debug stmts from the end
+   of NEW_BB to the beginning of successor basic blocks when needed.  If the
+   successor has multiple predecessors, reset them, otherwise keep
+   their value.  */
+
+static void
+maybe_move_debug_stmts_to_successors (copy_body_data *id, basic_block new_bb)
+{
+  edge e;
+  edge_iterator ei;
+  gimple_stmt_iterator si = gsi_last_nondebug_bb (new_bb);
+
+  if (gsi_end_p (si)
+      || gsi_one_before_end_p (si)
+      || !(stmt_can_throw_internal (gsi_stmt (si))
+	   || stmt_can_make_abnormal_goto (gsi_stmt (si))))
+    return;
+
+  FOR_EACH_EDGE (e, ei, new_bb->succs)
+    {
+      gimple_stmt_iterator ssi = gsi_last_bb (new_bb);
+      gimple_stmt_iterator dsi = gsi_after_labels (e->dest);
+      while (is_gimple_debug (gsi_stmt (ssi)))
+	{
+	  gimple stmt = gsi_stmt (ssi), new_stmt;
+	  tree var;
+	  tree value;
+
+	  /* For the last edge move the debug stmts instead of copying
+	     them.  */
+	  if (ei_one_before_end_p (ei))
+	    {
+	      si = ssi;
+	      gsi_prev (&ssi);
+	      if (!single_pred_p (e->dest))
+		gimple_debug_bind_reset_value (stmt);
+	      gsi_remove (&si, false);
+	      gsi_insert_before (&dsi, stmt, GSI_SAME_STMT);
+	      continue;
+	    }
+
+	  var = gimple_debug_bind_get_var (stmt);
+	  if (single_pred_p (e->dest))
+	    {
+	      value = gimple_debug_bind_get_value (stmt);
+	      value = unshare_expr (value);
+	    }
+	  else
+	    value = NULL_TREE;
+	  new_stmt = gimple_build_debug_bind (var, value, stmt);
+	  gsi_insert_before (&dsi, new_stmt, GSI_SAME_STMT);
+	  VEC_safe_push (gimple, heap, id->debug_stmts, new_stmt);
+	  gsi_prev (&ssi);
+	}
+    }
+}
+
 /* Make a copy of the body of FN so that it can be inserted inline in
    another function.  Walks FN via CFG, returns new fndecl.  */
 
@@ -1935,6 +2028,7 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency,
   struct function *cfun_to_copy;
   basic_block bb;
   tree new_fndecl = NULL;
+  bool need_debug_cleanup = false;
   gcov_type count_scale, frequency_scale;
   int last;
 
@@ -1985,7 +2079,7 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency,
 
   /* Now that we've duplicated the blocks, duplicate their edges.  */
   FOR_ALL_BB_FN (bb, cfun_to_copy)
-    copy_edges_for_bb (bb, count_scale, exit_block_map);
+    need_debug_cleanup |= copy_edges_for_bb (bb, count_scale, exit_block_map);
 
   if (gimple_in_ssa_p (cfun))
     FOR_ALL_BB_FN (bb, cfun_to_copy)
@@ -1993,6 +2087,10 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency,
 
   FOR_ALL_BB_FN (bb, cfun_to_copy)
     {
+      if (need_debug_cleanup
+	  && bb->index != ENTRY_BLOCK
+	  && bb->index != EXIT_BLOCK)
+	maybe_move_debug_stmts_to_successors (id, (basic_block) bb->aux);
       ((basic_block)bb->aux)->aux = NULL;
       bb->aux = NULL;
     }
@@ -2000,7 +2098,11 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency,
   /* Zero out AUX fields of newly created block during EH edge
      insertion. */
   for (; last < last_basic_block; last++)
-    BASIC_BLOCK (last)->aux = NULL;
+    {
+      if (need_debug_cleanup)
+	maybe_move_debug_stmts_to_successors (id, BASIC_BLOCK (last));
+      BASIC_BLOCK (last)->aux = NULL;
+    }
   entry_block_map->aux = NULL;
   exit_block_map->aux = NULL;
 
@@ -2043,6 +2145,12 @@ copy_debug_stmt (gimple stmt, copy_body_data *id)
       gcc_assert (TREE_CODE (*n) == VAR_DECL);
       t = *n;
     }
+  else if (TREE_CODE (t) == VAR_DECL
+	   && !TREE_STATIC (t)
+	   && gimple_in_ssa_p (cfun)
+	   && !pointer_map_contains (id->decl_map, t)
+	   && !var_ann (t))
+    /* T is a non-localized variable.  */;
   else
     walk_tree (&t, remap_gimple_op_r, &wi, NULL);
 
@@ -2914,6 +3022,8 @@ estimate_move_cost (tree type)
 {
   HOST_WIDE_INT size;
 
+  gcc_assert (!VOID_TYPE_P (type));
+
   size = int_size_in_bytes (type);
 
   if (size < 0 || size > MOVE_MAX_PIECES * MOVE_RATIO (!optimize_size))
@@ -3165,7 +3275,8 @@ estimate_num_insns (gimple stmt, eni_weights *weights)
 	  {
 	    tree t;
 	    for (t = TYPE_ARG_TYPES (funtype); t; t = TREE_CHAIN (t))
-	      cost += estimate_move_cost (TREE_VALUE (t));
+	      if (!VOID_TYPE_P (TREE_VALUE (t)))
+		cost += estimate_move_cost (TREE_VALUE (t));
 	  }
 	else
 	  {
@@ -3907,14 +4018,16 @@ copy_tree_r (tree *tp, int *walk_subtrees, void *data ATTRIBUTE_UNUSED)
 					 CONSTRUCTOR_ELTS (*tp));
       *tp = new_tree;
     }
+  else if (code == STATEMENT_LIST)
+    /* We used to just abort on STATEMENT_LIST, but we can run into them
+       with statement-expressions (c++/40975).  */
+    copy_statement_list (tp);
   else if (TREE_CODE_CLASS (code) == tcc_type)
     *walk_subtrees = 0;
   else if (TREE_CODE_CLASS (code) == tcc_declaration)
     *walk_subtrees = 0;
   else if (TREE_CODE_CLASS (code) == tcc_constant)
     *walk_subtrees = 0;
-  else
-    gcc_assert (code != STATEMENT_LIST);
   return NULL_TREE;
 }
 
@@ -4492,6 +4605,46 @@ clone_function_name (tree decl)
   return get_identifier (tmp_name);
 }
 
+/* Delete all unreachable basic blocks and update callgraph.
+   Doing so is somewhat nontrivial because we need to update all clones and
+   remove inline function that become unreachable.  */
+
+static bool
+delete_unreachable_blocks_update_callgraph (copy_body_data *id)
+{
+  bool changed = false;
+  basic_block b, next_bb;
+
+  find_unreachable_blocks ();
+
+  /* Delete all unreachable basic blocks.  */
+
+  for (b = ENTRY_BLOCK_PTR->next_bb; b != EXIT_BLOCK_PTR; b = next_bb)
+    {
+      next_bb = b->next_bb;
+
+      if (!(b->flags & BB_REACHABLE))
+	{
+          gimple_stmt_iterator bsi;
+
+          for (bsi = gsi_start_bb (b); !gsi_end_p (bsi); gsi_next (&bsi))
+	    if (gimple_code (gsi_stmt (bsi)) == GIMPLE_CALL)
+	      {
+	        struct cgraph_edge *e;
+
+	        if ((e = cgraph_edge (id->dst_node, gsi_stmt (bsi))) != NULL)
+		  cgraph_remove_edge (e);
+	      }
+	  delete_basic_block (b);
+	  changed = true;
+	}
+    }
+
+  if (changed)
+    tidy_fallthru_edges ();
+  return changed;
+}
+
 /* Create a copy of a function's tree.
    OLD_DECL and NEW_DECL are FUNCTION_DECL tree nodes
    of the original function and the new copied function
@@ -4669,7 +4822,7 @@ tree_function_versioning (tree old_decl, tree new_decl, varray_type tree_map,
       free_dominance_info (CDI_DOMINATORS);
       free_dominance_info (CDI_POST_DOMINATORS);
       if (!update_clones)
-        delete_unreachable_blocks ();
+        delete_unreachable_blocks_update_callgraph (&id);
       update_ssa (TODO_update_ssa);
       if (!update_clones)
 	{

@@ -53,6 +53,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "timevar.h"
 #include "tree-flow.h"
 #include "pointer-set.h"
+#include "cgraph.h"
 
 static tree grokparms (tree parmlist, tree *);
 static const char *redeclaration_error_message (tree, tree);
@@ -499,6 +500,10 @@ poplevel_named_label_1 (void **slot, void *data)
   return 1;
 }
 
+/* Saved errorcount to avoid -Wunused-but-set-{parameter,variable} warnings
+   when errors were reported, except for -Werror-unused-but-set-*.  */
+static int unused_but_set_errorcount;
+
 /* Exit a binding level.
    Pop the level off, and restore the state of the identifier-decl mappings
    that were in effect when this level was entered.
@@ -592,14 +597,29 @@ poplevel (int keep, int reverse, int functionbody)
     = current_binding_level->kind == sk_for && flag_new_for_scope == 1;
 
   /* Before we remove the declarations first check for unused variables.  */
-  if (warn_unused_variable
+  if ((warn_unused_variable || warn_unused_but_set_variable)
       && !processing_template_decl)
     for (decl = getdecls (); decl; decl = TREE_CHAIN (decl))
       if (TREE_CODE (decl) == VAR_DECL
-	  && ! TREE_USED (decl)
+	  && (! TREE_USED (decl) || !DECL_READ_P (decl))
 	  && ! DECL_IN_SYSTEM_HEADER (decl)
 	  && DECL_NAME (decl) && ! DECL_ARTIFICIAL (decl))
-	warning (OPT_Wunused_variable, "unused variable %q+D", decl);
+	{
+	  if (! TREE_USED (decl))
+	    warning (OPT_Wunused_variable, "unused variable %q+D", decl);
+	  else if (DECL_CONTEXT (decl) == current_function_decl
+		   && TREE_TYPE (decl) != error_mark_node
+		   && !DECL_INTEGRAL_CONSTANT_VAR_P (decl)
+		   && TREE_CODE (TREE_TYPE (decl)) != REFERENCE_TYPE
+		   && errorcount == unused_but_set_errorcount
+		   && (!CLASS_TYPE_P (TREE_TYPE (decl))
+		       || !TYPE_HAS_NONTRIVIAL_DESTRUCTOR (TREE_TYPE (decl))))
+	    {
+	      warning (OPT_Wunused_but_set_variable,
+		       "variable %q+D set but not used", decl); 
+	      unused_but_set_errorcount = errorcount;
+	    }
+	}
 
   /* Remove declarations for all the DECLs in this level.  */
   for (link = decls; link; link = TREE_CHAIN (link))
@@ -2083,6 +2103,13 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
      TREE_USED (newdecl) = 1;
    else if (TREE_USED (newdecl))
      TREE_USED (olddecl) = 1;
+  if (TREE_CODE (newdecl) == VAR_DECL)
+    {
+      if (DECL_READ_P (olddecl))
+	DECL_READ_P (newdecl) = 1;
+      else if (DECL_READ_P (newdecl))
+	DECL_READ_P (olddecl) = 1;
+    }
 
   if (TREE_CODE (newdecl) == FUNCTION_DECL)
     {
@@ -3536,6 +3563,8 @@ cp_make_fname_decl (tree id, int type_dep)
   if (current_function_decl)
     {
       struct cp_binding_level *b = current_binding_level;
+      if (b->kind == sk_function_parms)
+	return error_mark_node;
       while (b->level_chain->kind != sk_function_parms)
 	b = b->level_chain;
       pushdecl_with_scope (decl, b, /*is_friend=*/false);
@@ -5379,6 +5408,8 @@ initialize_local_var (tree decl, tree init)
 
   /* Compute and store the initial value.  */
   already_used = TREE_USED (decl) || TREE_USED (type);
+  if (TREE_USED (type))
+    DECL_READ_P (decl) = 1;
 
   /* Generate a cleanup, if necessary.  */
   cleanup = cxx_maybe_build_cleanup (decl);
@@ -6097,6 +6128,7 @@ start_cleanup_fn (void)
       parmdecl = cp_build_parm_decl (NULL_TREE, ptr_type_node);
       DECL_CONTEXT (parmdecl) = fndecl;
       TREE_USED (parmdecl) = 1;
+      DECL_READ_P (parmdecl) = 1;
       DECL_ARGUMENTS (fndecl) = parmdecl;
     }
 
@@ -7218,11 +7250,8 @@ compute_array_index_type (tree name, tree size)
 	 structural equality checks.  */
       itype = build_index_type (build_min (MINUS_EXPR, sizetype,
 					   size, integer_one_node));
-      if (!TREE_SIDE_EFFECTS (size))
-	{
-	  TYPE_DEPENDENT_P (itype) = 1;
-	  TYPE_DEPENDENT_P_VALID (itype) = 1;
-	}
+      TYPE_DEPENDENT_P (itype) = 1;
+      TYPE_DEPENDENT_P_VALID (itype) = 1;
       SET_TYPE_STRUCTURAL_EQUALITY (itype);
       return itype;
     }
@@ -7239,6 +7268,8 @@ compute_array_index_type (tree name, tree size)
 
   /* The size might be the result of a cast.  */
   STRIP_TYPE_NOPS (size);
+
+  size = mark_rvalue_use (size);
 
   /* It might be a const variable or enumeration constant.  */
   size = integral_constant_value (size);
@@ -8504,6 +8535,34 @@ grokdeclarator (const cp_declarator *declarator,
 	    error ("cannot declare %s to qualified function type %qT",
 		   declarator->kind == cdk_reference ? "reference" : "pointer",
 		   type);
+
+	  /* When the pointed-to type involves components of variable size,
+	     care must be taken to ensure that the size evaluation code is
+	     emitted early enough to dominate all the possible later uses
+	     and late enough for the variables on which it depends to have
+	     been assigned.
+
+	     This is expected to happen automatically when the pointed-to
+	     type has a name/declaration of it's own, but special attention
+	     is required if the type is anonymous.
+
+	     We handle the NORMAL and FIELD contexts here by inserting a
+	     dummy statement that just evaluates the size at a safe point
+	     and ensures it is not deferred until e.g. within a deeper
+	     conditional context (c++/43555).
+
+	     We expect nothing to be needed here for PARM or TYPENAME.
+	     Evaluating the size at this point for TYPENAME would
+	     actually be incorrect, as we might be in the middle of an
+	     expression with side effects on the pointed-to type size
+	     "arguments" prior to the pointer declaration point and the
+	     size evaluation could end up prior to the side effects.  */
+
+	  if (!TYPE_NAME (type)
+	      && (decl_context == NORMAL || decl_context == FIELD)
+	      && at_function_scope_p ()
+	      && variably_modified_type_p (type, NULL_TREE))
+	    finish_expr_stmt (TYPE_SIZE (type));
 
 	  if (declarator->kind == cdk_reference)
 	    {
@@ -12359,6 +12418,8 @@ finish_function (int flags)
       && !current_function_returns_value && !current_function_returns_null
       /* Don't complain if we abort or throw.  */
       && !current_function_returns_abnormally
+      /* Don't complain if we are declared noreturn.  */
+      && !TREE_THIS_VOLATILE (fndecl)
       && !DECL_NAME (DECL_RESULT (fndecl))
       && !TREE_NO_WARNING (fndecl)
       /* Structor return values (if any) are set by the compiler.  */
@@ -12373,6 +12434,33 @@ finish_function (int flags)
   /* Store the end of the function, so that we get good line number
      info for the epilogue.  */
   cfun->function_end_locus = input_location;
+
+  /* Complain about parameters that are only set, but never otherwise used.  */
+  if (warn_unused_but_set_parameter
+      && !processing_template_decl
+      && errorcount == unused_but_set_errorcount
+      && !DECL_CLONED_FUNCTION_P (fndecl))
+    {
+      tree decl;
+
+      for (decl = DECL_ARGUMENTS (fndecl);
+	   decl;
+	   decl = TREE_CHAIN (decl))
+	if (TREE_USED (decl)
+	    && TREE_CODE (decl) == PARM_DECL
+	    && !DECL_READ_P (decl)
+	    && DECL_NAME (decl)
+	    && !DECL_ARTIFICIAL (decl)
+	    && !TREE_NO_WARNING (decl)
+	    && !DECL_IN_SYSTEM_HEADER (decl)
+	    && TREE_TYPE (decl) != error_mark_node
+	    && TREE_CODE (TREE_TYPE (decl)) != REFERENCE_TYPE
+	    && (!CLASS_TYPE_P (TREE_TYPE (decl))
+	        || !TYPE_HAS_NONTRIVIAL_DESTRUCTOR (TREE_TYPE (decl))))
+	  warning (OPT_Wunused_but_set_parameter,
+		   "parameter %q+D set but not used", decl);
+      unused_but_set_errorcount = errorcount;
+    }
 
   /* Genericize before inlining.  */
   if (!processing_template_decl)
@@ -12778,6 +12866,42 @@ cp_missing_noreturn_ok_p (tree decl)
   return DECL_MAIN_P (decl);
 }
 
+/* Return name of comdat group for complete and base ctor (or dtor)
+   that have the same body.  If dtor is virtual, deleting dtor goes
+   into this comdat group as well.  */
+
+static tree
+cdtor_comdat_group (tree complete, tree base)
+{
+  tree complete_name = DECL_ASSEMBLER_NAME (complete);
+  tree base_name = DECL_ASSEMBLER_NAME (base);
+  char *grp_name;
+  const char *p, *q;
+  bool diff_seen = false;
+  size_t idx;
+  gcc_assert (IDENTIFIER_LENGTH (complete_name)
+	      == IDENTIFIER_LENGTH (base_name));
+  grp_name = XALLOCAVEC (char, IDENTIFIER_LENGTH (complete_name) + 1);
+  p = IDENTIFIER_POINTER (complete_name);
+  q = IDENTIFIER_POINTER (base_name);
+  for (idx = 0; idx < IDENTIFIER_LENGTH (complete_name); idx++)
+    if (p[idx] == q[idx])
+      grp_name[idx] = p[idx];
+    else
+      {
+	gcc_assert (!diff_seen
+		    && idx > 0
+		    && (p[idx - 1] == 'C' || p[idx - 1] == 'D')
+		    && p[idx] == '1'
+		    && q[idx] == '2');
+	grp_name[idx] = '5';
+	diff_seen = true;
+      }
+  grp_name[idx] = '\0';
+  gcc_assert (diff_seen);
+  return get_identifier (grp_name);
+}
+
 /* Return the COMDAT group into which DECL should be placed.  */
 
 const char *
@@ -12806,6 +12930,35 @@ cxx_comdat_group (tree decl)
 	    decl = target;
 	  else
 	    break;
+	}
+      if (DECL_CLONED_FUNCTION_P (decl)
+	  && (DECL_CONSTRUCTOR_P (decl) || DECL_DESTRUCTOR_P (decl)))
+	{
+	  tree fn = DECL_CLONED_FUNCTION (decl), clone;
+	  tree fns[2] = { NULL_TREE, NULL_TREE };
+
+	  /* Look for the complete destructor which may be used to build the
+	     delete destructor.  */
+	  FOR_EACH_CLONE (clone, fn)
+	    if (DECL_NAME (clone) == complete_dtor_identifier
+		|| DECL_NAME (clone) == complete_ctor_identifier)
+	      fns[1] = clone;
+	    else if (DECL_NAME (clone) == base_dtor_identifier
+		     || DECL_NAME (clone) == base_ctor_identifier)
+	      fns[0] = clone;
+	    else if (DECL_NAME (clone) == deleting_dtor_identifier)
+	      ;
+	    else
+	      gcc_unreachable ();
+
+	  if (fns[0] && fns[1])
+	    {
+	      struct cgraph_node *node = cgraph_get_node (fns[0]);
+
+	      if (node && node->same_body)
+		return IDENTIFIER_POINTER (cdtor_comdat_group (fns[1],
+							       fns[0]));
+	    }
 	}
       name = DECL_ASSEMBLER_NAME (decl);
     }

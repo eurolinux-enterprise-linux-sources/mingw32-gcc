@@ -1,5 +1,5 @@
 /* Definitions for C++ name lookup routines.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
@@ -840,8 +840,8 @@ pushdecl_maybe_friend (tree x, bool is_friend)
 	    add_decl_to_level (x, NAMESPACE_LEVEL (CP_DECL_CONTEXT (t)));
 	}
 
-      if (TREE_CODE (x) == FUNCTION_DECL || DECL_FUNCTION_TEMPLATE_P (x))
-	check_default_args (x);
+      if (TREE_CODE (t) == FUNCTION_DECL || DECL_FUNCTION_TEMPLATE_P (t))
+	check_default_args (t);
 
       if (t != x || DECL_FUNCTION_TEMPLATE_P (t))
 	POP_TIMEVAR_AND_RETURN (TV_NAME_LOOKUP, t);
@@ -3998,8 +3998,13 @@ qualified_lookup_using_namespace (tree name, tree scope,
 }
 
 /* Subroutine of outer_binding.
-   Returns TRUE if BINDING is a binding to a template parameter of SCOPE,
-   FALSE otherwise.  */
+
+   Returns TRUE if BINDING is a binding to a template parameter of
+   SCOPE.  In that case SCOPE is the scope of a primary template
+   parameter -- in the sense of G++, i.e, a template that has its own
+   template header.
+
+   Returns FALSE otherwise.  */
 
 static bool
 binding_to_template_parms_of_scope_p (cxx_binding *binding,
@@ -4015,6 +4020,8 @@ binding_to_template_parms_of_scope_p (cxx_binding *binding,
   return (scope
 	  && scope->this_entity
 	  && get_template_info (scope->this_entity)
+	  && PRIMARY_TEMPLATE_P (TI_TEMPLATE
+				 (get_template_info (scope->this_entity)))
 	  && parameter_of_template_p (binding_value,
 				      TI_TEMPLATE (get_template_info \
 						    (scope->this_entity))));

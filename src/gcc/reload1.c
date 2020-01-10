@@ -1,6 +1,6 @@
 /* Reload pseudo regs into hard regs for insns that require hard regs.
    Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -377,6 +377,21 @@ static int first_label_num;
 static char *offsets_known_at;
 static HOST_WIDE_INT (*offsets_at)[NUM_ELIMINABLE_REGS];
 
+/* Stack of addresses where an rtx has been changed.  We can undo the 
+   changes by popping items off the stack and restoring the original
+   value at each location. 
+
+   We use this simplistic undo capability rather than copy_rtx as copy_rtx
+   will not make a deep copy of a normally sharable rtx, such as
+   (const (plus (symbol_ref) (const_int))).  If such an expression appears
+   as R1 in gen_reload_chain_without_interm_reg_p, then a shared
+   rtx expression would be changed.  See PR 42431.  */
+
+typedef rtx *rtx_p;
+DEF_VEC_P(rtx_p);
+DEF_VEC_ALLOC_P(rtx_p,heap);
+static VEC(rtx_p,heap) *substitute_stack;
+
 /* Number of labels in the current function.  */
 
 static int num_labels;
@@ -431,7 +446,6 @@ static void failed_reload (rtx, int);
 static int set_reload_reg (int, int);
 static void choose_reload_regs_init (struct insn_chain *, rtx *);
 static void choose_reload_regs (struct insn_chain *);
-static void merge_assigned_reloads (rtx);
 static void emit_input_reload_insns (struct insn_chain *, struct reload *,
 				     rtx, int);
 static void emit_output_reload_insns (struct insn_chain *, struct reload *,
@@ -1446,6 +1460,8 @@ reload (rtx first, int global)
     REGNO_POINTER_ALIGN (HARD_FRAME_POINTER_REGNUM) = BITS_PER_UNIT;
 #endif
 
+  VEC_free (rtx_p, heap, substitute_stack);
+
   return failure;
 }
 
@@ -2146,7 +2162,7 @@ spill_failure (rtx insn, enum reg_class rclass)
 static void
 delete_dead_insn (rtx insn)
 {
-  rtx prev = prev_real_insn (insn);
+  rtx prev = prev_active_insn (insn);
   rtx prev_dest;
 
   /* If the previous insn sets a register that dies in our insn, delete it
@@ -2568,7 +2584,7 @@ eliminate_regs_1 (rtx x, enum machine_mode mem_mode, rtx insn,
       else if (reg_renumber && reg_renumber[regno] < 0
 	       && reg_equiv_invariant && reg_equiv_invariant[regno])
 	{
-	  if (may_use_invariant)
+	  if (may_use_invariant || (insn && DEBUG_INSN_P (insn)))
 	    return eliminate_regs_1 (copy_rtx (reg_equiv_invariant[regno]),
 			             mem_mode, insn, true);
 	  /* There exists at least one use of REGNO that cannot be
@@ -2683,9 +2699,11 @@ eliminate_regs_1 (rtx x, enum machine_mode mem_mode, rtx insn,
 	  if (ep->from_rtx == XEXP (x, 0) && ep->can_eliminate)
 	    {
 	      if (! mem_mode
-		  /* Refs inside notes don't count for this purpose.  */
+		  /* Refs inside notes or in DEBUG_INSNs don't count for
+		     this purpose.  */
 		  && ! (insn != 0 && (GET_CODE (insn) == EXPR_LIST
-				      || GET_CODE (insn) == INSN_LIST)))
+				      || GET_CODE (insn) == INSN_LIST
+				      || DEBUG_INSN_P (insn))))
 		ep->ref_outside_mem = 1;
 
 	      return
@@ -2861,6 +2879,9 @@ eliminate_regs_1 (rtx x, enum machine_mode mem_mode, rtx insn,
       return x;
 
     case CLOBBER:
+      gcc_assert (insn && DEBUG_INSN_P (insn));
+      break;
+
     case ASM_OPERANDS:
     case SET:
       gcc_unreachable ();
@@ -3197,6 +3218,9 @@ eliminate_regs_in_insn (rtx insn, int replace)
 		  || GET_CODE (PATTERN (insn)) == ADDR_DIFF_VEC
 		  || GET_CODE (PATTERN (insn)) == ASM_INPUT
 		  || DEBUG_INSN_P (insn));
+      if (DEBUG_INSN_P (insn))
+	INSN_VAR_LOCATION_LOC (insn)
+	  = eliminate_regs (INSN_VAR_LOCATION_LOC (insn), VOIDmode, insn);
       return 0;
     }
 
@@ -4262,12 +4286,6 @@ reload_as_needed (int live_known)
 		 Record the choices of reload reg in reload_reg_rtx.  */
 	      choose_reload_regs (chain);
 
-	      /* Merge any reloads that we didn't combine for fear of
-		 increasing the number of spill registers needed but now
-		 discover can be safely merged.  */
-	      if (SMALL_REGISTER_CLASSES)
-		merge_assigned_reloads (insn);
-
 	      /* Generate the insns to reload operands into or out of
 		 their reload regs.  */
 	      emit_reload_insns (chain);
@@ -4482,6 +4500,13 @@ reload_as_needed (int live_known)
 	{
 	  AND_COMPL_HARD_REG_SET (reg_reloaded_valid, call_used_reg_set);
 	  AND_COMPL_HARD_REG_SET (reg_reloaded_valid, reg_reloaded_call_part_clobbered);
+
+	  /* If this is a call to a setjmp-type function, we must not
+	     reuse any reload reg contents across the call; that will
+	     just be clobbered by other uses of the register in later
+	     code, before the longjmp.  */
+	  if (find_reg_note (insn, REG_SETJMP, NULL_RTX))
+	    CLEAR_HARD_REG_SET (reg_reloaded_valid);
 	}
     }
 
@@ -5152,9 +5177,8 @@ reloads_unique_chain_p (int r1, int r2)
   return true;
 }
 
-
 /* The recursive function change all occurrences of WHAT in *WHERE
-   onto REPL.  */
+   to REPL.  */
 static void
 substitute (rtx *where, const_rtx what, rtx repl)
 {
@@ -5167,6 +5191,8 @@ substitute (rtx *where, const_rtx what, rtx repl)
 
   if (*where == what || rtx_equal_p (*where, what))
     {
+      /* Record the location of the changed rtx.  */
+      VEC_safe_push (rtx_p, heap, substitute_stack, where);
       *where = repl;
       return;
     }
@@ -5214,7 +5240,9 @@ substitute (rtx *where, const_rtx what, rtx repl)
 static bool
 gen_reload_chain_without_interm_reg_p (int r1, int r2)
 {
-  bool result;
+  /* Assume other cases in gen_reload are not possible for
+     chain reloads or do need an intermediate hard registers.  */
+  bool result = true;
   int regno, n, code;
   rtx out, in, tem, insn;
   rtx last = get_last_insn ();
@@ -5230,7 +5258,7 @@ gen_reload_chain_without_interm_reg_p (int r1, int r2)
   regno = rld[r1].regno >= 0 ? rld[r1].regno : rld[r2].regno;
   gcc_assert (regno >= 0);
   out = gen_rtx_REG (rld[r1].mode, regno);
-  in = copy_rtx (rld[r1].in);
+  in = rld[r1].in;
   substitute (&in, rld[r2].in, gen_rtx_REG (rld[r2].mode, regno));
 
   /* If IN is a paradoxical SUBREG, remove it and try to put the
@@ -5264,12 +5292,16 @@ gen_reload_chain_without_interm_reg_p (int r1, int r2)
 	}
       
       delete_insns_since (last);
-      return result;
     }
   
-  /* It looks like other cases in gen_reload are not possible for
-     chain reloads or do need an intermediate hard registers.  */
-  return true;
+  /* Restore the original value at each changed address within R1.  */
+  while (!VEC_empty (rtx_p, substitute_stack))
+    {
+      rtx *where = VEC_pop (rtx_p, substitute_stack);
+      *where = rld[r2].in;
+    }
+
+  return result;
 }
 
 /* Return 1 if the reloads denoted by R1 and R2 cannot share a register.
@@ -6254,17 +6286,6 @@ choose_reload_regs (struct insn_chain *chain)
 	      && (rld[r].nregs == max_group_size
 		  || ! reg_classes_intersect_p (rld[r].rclass, group_class)))
 	    search_equiv = rld[r].in;
-	  /* If this is an output reload from a simple move insn, look
-	     if an equivalence for the input is available.  */
-	  else if (inheritance && rld[r].in == 0 && rld[r].out != 0)
-	    {
-	      rtx set = single_set (insn);
-
-	      if (set
-		  && rtx_equal_p (rld[r].out, SET_DEST (set))
-		  && CONSTANT_P (SET_SRC (set)))
-		search_equiv = SET_SRC (set);
-	    }
 
 	  if (search_equiv)
 	    {
@@ -6643,152 +6664,6 @@ deallocate_reload_reg (int r)
     clear_reload_reg_in_use (regno, rld[r].opnum, rld[r].when_needed,
 			     rld[r].mode);
   reload_spill_index[r] = -1;
-}
-
-/* If SMALL_REGISTER_CLASSES is nonzero, we may not have merged two
-   reloads of the same item for fear that we might not have enough reload
-   registers. However, normally they will get the same reload register
-   and hence actually need not be loaded twice.
-
-   Here we check for the most common case of this phenomenon: when we have
-   a number of reloads for the same object, each of which were allocated
-   the same reload_reg_rtx, that reload_reg_rtx is not used for any other
-   reload, and is not modified in the insn itself.  If we find such,
-   merge all the reloads and set the resulting reload to RELOAD_OTHER.
-   This will not increase the number of spill registers needed and will
-   prevent redundant code.  */
-
-static void
-merge_assigned_reloads (rtx insn)
-{
-  int i, j;
-
-  /* Scan all the reloads looking for ones that only load values and
-     are not already RELOAD_OTHER and ones whose reload_reg_rtx are
-     assigned and not modified by INSN.  */
-
-  for (i = 0; i < n_reloads; i++)
-    {
-      int conflicting_input = 0;
-      int max_input_address_opnum = -1;
-      int min_conflicting_input_opnum = MAX_RECOG_OPERANDS;
-
-      if (rld[i].in == 0 || rld[i].when_needed == RELOAD_OTHER
-	  || rld[i].out != 0 || rld[i].reg_rtx == 0
-	  || reg_set_p (rld[i].reg_rtx, insn))
-	continue;
-
-      /* Look at all other reloads.  Ensure that the only use of this
-	 reload_reg_rtx is in a reload that just loads the same value
-	 as we do.  Note that any secondary reloads must be of the identical
-	 class since the values, modes, and result registers are the
-	 same, so we need not do anything with any secondary reloads.  */
-
-      for (j = 0; j < n_reloads; j++)
-	{
-	  if (i == j || rld[j].reg_rtx == 0
-	      || ! reg_overlap_mentioned_p (rld[j].reg_rtx,
-					    rld[i].reg_rtx))
-	    continue;
-
-	  if (rld[j].when_needed == RELOAD_FOR_INPUT_ADDRESS
-	      && rld[j].opnum > max_input_address_opnum)
-	    max_input_address_opnum = rld[j].opnum;
-
-	  /* If the reload regs aren't exactly the same (e.g, different modes)
-	     or if the values are different, we can't merge this reload.
-	     But if it is an input reload, we might still merge
-	     RELOAD_FOR_INPUT_ADDRESS and RELOAD_FOR_OTHER_ADDRESS reloads.  */
-
-	  if (! rtx_equal_p (rld[i].reg_rtx, rld[j].reg_rtx)
-	      || rld[j].out != 0 || rld[j].in == 0
-	      || ! rtx_equal_p (rld[i].in, rld[j].in))
-	    {
-	      if (rld[j].when_needed != RELOAD_FOR_INPUT
-		  || ((rld[i].when_needed != RELOAD_FOR_INPUT_ADDRESS
-		       || rld[i].opnum > rld[j].opnum)
-		      && rld[i].when_needed != RELOAD_FOR_OTHER_ADDRESS))
-		break;
-	      conflicting_input = 1;
-	      if (min_conflicting_input_opnum > rld[j].opnum)
-		min_conflicting_input_opnum = rld[j].opnum;
-	    }
-	}
-
-      /* If all is OK, merge the reloads.  Only set this to RELOAD_OTHER if
-	 we, in fact, found any matching reloads.  */
-
-      if (j == n_reloads
-	  && max_input_address_opnum <= min_conflicting_input_opnum)
-	{
-	  gcc_assert (rld[i].when_needed != RELOAD_FOR_OUTPUT);
-
-	  for (j = 0; j < n_reloads; j++)
-	    if (i != j && rld[j].reg_rtx != 0
-		&& rtx_equal_p (rld[i].reg_rtx, rld[j].reg_rtx)
-		&& (! conflicting_input
-		    || rld[j].when_needed == RELOAD_FOR_INPUT_ADDRESS
-		    || rld[j].when_needed == RELOAD_FOR_OTHER_ADDRESS))
-	      {
-		rld[i].when_needed = RELOAD_OTHER;
-		rld[j].in = 0;
-		reload_spill_index[j] = -1;
-		transfer_replacements (i, j);
-	      }
-
-	  /* If this is now RELOAD_OTHER, look for any reloads that
-	     load parts of this operand and set them to
-	     RELOAD_FOR_OTHER_ADDRESS if they were for inputs,
-	     RELOAD_OTHER for outputs.  Note that this test is
-	     equivalent to looking for reloads for this operand
-	     number.
-
-	     We must take special care with RELOAD_FOR_OUTPUT_ADDRESS;
-	     it may share registers with a RELOAD_FOR_INPUT, so we can
-	     not change it to RELOAD_FOR_OTHER_ADDRESS.  We should
-	     never need to, since we do not modify RELOAD_FOR_OUTPUT.
-
-	     It is possible that the RELOAD_FOR_OPERAND_ADDRESS
-	     instruction is assigned the same register as the earlier
-	     RELOAD_FOR_OTHER_ADDRESS instruction.  Merging these two
-	     instructions will cause the RELOAD_FOR_OTHER_ADDRESS
-	     instruction to be deleted later on.  */
-
-	  if (rld[i].when_needed == RELOAD_OTHER)
-	    for (j = 0; j < n_reloads; j++)
-	      if (rld[j].in != 0
-		  && rld[j].when_needed != RELOAD_OTHER
-		  && rld[j].when_needed != RELOAD_FOR_OTHER_ADDRESS
-		  && rld[j].when_needed != RELOAD_FOR_OUTPUT_ADDRESS
-		  && rld[j].when_needed != RELOAD_FOR_OPERAND_ADDRESS
-		  && (! conflicting_input
-		      || rld[j].when_needed == RELOAD_FOR_INPUT_ADDRESS
-		      || rld[j].when_needed == RELOAD_FOR_INPADDR_ADDRESS)
-		  && reg_overlap_mentioned_for_reload_p (rld[j].in,
-							 rld[i].in))
-		{
-		  int k;
-
-		  rld[j].when_needed
-		    = ((rld[j].when_needed == RELOAD_FOR_INPUT_ADDRESS
-			|| rld[j].when_needed == RELOAD_FOR_INPADDR_ADDRESS)
-		       ? RELOAD_FOR_OTHER_ADDRESS : RELOAD_OTHER);
-
-		  /* Check to see if we accidentally converted two
-		     reloads that use the same reload register with
-		     different inputs to the same type.  If so, the
-		     resulting code won't work.  */
-		  if (rld[j].reg_rtx)
-		    for (k = 0; k < j; k++)
-		      gcc_assert (rld[k].in == 0 || rld[k].reg_rtx == 0
-				  || rld[k].when_needed != rld[j].when_needed
-				  || !rtx_equal_p (rld[k].reg_rtx,
-						   rld[j].reg_rtx)
-				  || rtx_equal_p (rld[k].in,
-						  rld[j].in));
-		}
-	}
-    }
 }
 
 /* These arrays are filled by emit_reload_insns and its subroutines.  */

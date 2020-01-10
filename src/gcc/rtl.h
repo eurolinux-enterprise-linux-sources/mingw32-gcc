@@ -1,6 +1,6 @@
 /* Register Transfer Language (RTL) definitions for GCC
    Copyright (C) 1987, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -274,7 +274,9 @@ struct rtx_def GTY((chain_next ("RTX_NEXT (&%h)"),
      1 in a SUBREG with a negative value.
      1 in a LABEL_REF, REG_LABEL_TARGET or REG_LABEL_OPERAND note for a
      non-local label.
-     In a SYMBOL_REF, this flag is used for machine-specific purposes.  */
+     In a SYMBOL_REF, this flag is used for machine-specific purposes.
+     In a PREFETCH, this flag indicates that it should be considered a scheduling
+     barrier.  */
   unsigned int volatil : 1;
   /* 1 in a MEM referring to a field of an aggregate.
      0 if the MEM was a variable or the result of a * operator in C;
@@ -1424,6 +1426,10 @@ do {						\
    offset within that block.  */
 #define SYMBOL_REF_BLOCK_OFFSET(RTX) (BLOCK_SYMBOL_CHECK (RTX)->offset)
 
+/* True if RTX is flagged to be a scheduling barrier.  */
+#define PREFETCH_SCHEDULE_BARRIER_P(RTX)					\
+  (RTL_FLAG_CHECK1("PREFETCH_SCHEDULE_BARRIER_P", (RTX), PREFETCH)->volatil)
+
 /* Indicate whether the machine has any sort of auto increment addressing.
    If not, we can avoid checking for REG_INC notes.  */
 
@@ -1682,6 +1688,8 @@ extern rtx next_nonnote_insn (rtx);
 extern rtx next_nonnote_insn_bb (rtx);
 extern rtx prev_nondebug_insn (rtx);
 extern rtx next_nondebug_insn (rtx);
+extern rtx prev_nonnote_nondebug_insn (rtx);
+extern rtx next_nonnote_nondebug_insn (rtx);
 extern rtx prev_real_insn (rtx);
 extern rtx next_real_insn (rtx);
 extern rtx prev_active_insn (rtx);
@@ -1751,7 +1759,7 @@ extern rtx simplify_subreg (enum machine_mode, rtx, enum machine_mode,
 extern rtx simplify_gen_subreg (enum machine_mode, rtx, enum machine_mode,
 				unsigned int);
 extern rtx simplify_replace_fn_rtx (rtx, const_rtx,
-				    rtx (*fn) (rtx, void *), void *);
+				    rtx (*fn) (rtx, const_rtx, void *), void *);
 extern rtx simplify_replace_rtx (rtx, const_rtx, rtx);
 extern rtx simplify_rtx (const_rtx);
 extern rtx avoid_constant_pool_reference (rtx);
@@ -2356,6 +2364,7 @@ extern int output_dependence (const_rtx, const_rtx);
 extern void init_alias_target (void);
 extern void init_alias_analysis (void);
 extern void end_alias_analysis (void);
+extern void vt_equate_reg_base_value (const_rtx, const_rtx);
 extern bool memory_modified_in_insn_p (const_rtx, const_rtx);
 extern rtx find_base_term (rtx);
 extern rtx gen_hard_reg_clobber (enum machine_mode, unsigned int);
@@ -2372,8 +2381,6 @@ extern GTY(()) rtx stack_limit_rtx;
 /* In predict.c */
 extern void invert_br_probabilities (rtx);
 extern bool expensive_function_p (int);
-/* In cfgexpand.c */
-extern void add_reg_br_prob_note (rtx last, int probability);
 
 /* In var-tracking.c */
 extern unsigned int variable_tracking_main (void);

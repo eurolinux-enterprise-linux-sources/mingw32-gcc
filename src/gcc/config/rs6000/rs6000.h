@@ -273,6 +273,20 @@ extern const char *host_detect_local_cpu (int argc, const char **argv);
 #define TARGET_SECURE_PLT 0
 #endif
 
+/* Code model for 64-bit linux.
+   small: 16-bit toc offsets.
+   medium: 32-bit toc offsets, static data and code within 2G of TOC pointer.
+   large: 32-bit toc offsets, no limit on static data and code.  */
+enum rs6000_cmodel {
+  CMODEL_SMALL,
+  CMODEL_MEDIUM,
+  CMODEL_LARGE
+};
+
+#ifndef TARGET_CMODEL
+#define TARGET_CMODEL CMODEL_SMALL
+#endif
+
 #define TARGET_32BIT		(! TARGET_64BIT)
 
 #ifndef HAVE_AS_TLS
@@ -1026,24 +1040,15 @@ extern unsigned rs6000_pointer_size;
 	 ((MODE) == V4SFmode		\
 	  || (MODE) == V2DFmode)	\
 
-#define VSX_SCALAR_MODE(MODE)		\
-	((MODE) == DFmode)
-
-#define VSX_MODE(MODE)			\
-	(VSX_VECTOR_MODE (MODE)		\
-	 || VSX_SCALAR_MODE (MODE))
-
-#define VSX_MOVE_MODE(MODE)		\
-	(VSX_VECTOR_MODE (MODE)		\
-	 || VSX_SCALAR_MODE (MODE)	\
-	 || ALTIVEC_VECTOR_MODE (MODE)	\
-	 || (MODE) == TImode)
-
 #define ALTIVEC_VECTOR_MODE(MODE)	\
 	 ((MODE) == V16QImode		\
 	  || (MODE) == V8HImode		\
 	  || (MODE) == V4SFmode		\
 	  || (MODE) == V4SImode)
+
+#define ALTIVEC_OR_VSX_VECTOR_MODE(MODE)				\
+  (ALTIVEC_VECTOR_MODE (MODE) || VSX_VECTOR_MODE (MODE) 		\
+   || (MODE) == V2DImode)
 
 #define SPE_VECTOR_MODE(MODE)		\
 	((MODE) == V4HImode          	\
@@ -1087,10 +1092,10 @@ extern unsigned rs6000_pointer_size;
    ? ALTIVEC_VECTOR_MODE (MODE2)		\
    : ALTIVEC_VECTOR_MODE (MODE2)		\
    ? ALTIVEC_VECTOR_MODE (MODE1)		\
-   : VSX_VECTOR_MODE (MODE1)			\
-   ? VSX_VECTOR_MODE (MODE2)			\
-   : VSX_VECTOR_MODE (MODE2)			\
-   ? VSX_VECTOR_MODE (MODE1)			\
+   : ALTIVEC_OR_VSX_VECTOR_MODE (MODE1)		\
+   ? ALTIVEC_OR_VSX_VECTOR_MODE (MODE2)		\
+   : ALTIVEC_OR_VSX_VECTOR_MODE (MODE2)		\
+   ? ALTIVEC_OR_VSX_VECTOR_MODE (MODE1)		\
    : 1)
 
 /* Post-reload, we can't use any new AltiVec registers, as we already

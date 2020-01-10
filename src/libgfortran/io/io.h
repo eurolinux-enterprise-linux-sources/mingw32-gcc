@@ -368,7 +368,7 @@ typedef struct
   CHARACTER2 (round);
   CHARACTER1 (sign);
   GFC_INTEGER_4 *pending;
-  GFC_INTEGER_4 *size;
+  GFC_IO_INT *size;
   GFC_INTEGER_4 *id;
 }
 st_parameter_inquire;
@@ -728,6 +728,9 @@ internal_proto(delete_file);
 extern int file_exists (const char *file, gfc_charlen_type file_len);
 internal_proto(file_exists);
 
+extern GFC_IO_INT file_size (const char *file, gfc_charlen_type file_len);
+internal_proto(file_size);
+
 extern const char *inquire_sequential (const char *, int);
 internal_proto(inquire_sequential);
 
@@ -847,9 +850,6 @@ internal_proto(type_name);
 
 extern void * read_block_form (st_parameter_dt *, int *);
 internal_proto(read_block_form);
-
-extern char *read_sf (st_parameter_dt *, int *, int);
-internal_proto(read_sf);
 
 extern void *write_block (st_parameter_dt *, int);
 internal_proto(write_block);
@@ -1011,6 +1011,12 @@ fbuf_getc (gfc_unit * u)
   if (u->fbuf->pos < u->fbuf->act)
     return (unsigned char) u->fbuf->buf[u->fbuf->pos++];
   return fbuf_getc_refill (u);
+}
+
+static inline char *
+fbuf_getptr (gfc_unit * u)
+{
+  return (char*) (u->fbuf->buf + u->fbuf->pos);
 }
 
 /* lock.c */

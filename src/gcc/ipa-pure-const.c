@@ -360,7 +360,7 @@ get_asm_expr_operands (funct_state local, gimple stmt)
   for (i = 0; i < gimple_asm_nclobbers (stmt); i++)
     {
       op = gimple_asm_clobber_op (stmt, i);
-      if (simple_cst_equal(TREE_VALUE (op), memory_identifier_string) == 1) 
+      if (strcmp (TREE_STRING_POINTER (TREE_VALUE (op)), "memory") == 0)
 	/* Abandon all hope, ye who enter here. */
 	local->pure_const_state = IPA_NEITHER;
     }
@@ -860,8 +860,8 @@ propagate (void)
 	      switch (pure_const_state)
 		{
 		case IPA_CONST:
-		  TREE_READONLY (w->decl) = 1;
-		  DECL_LOOPING_CONST_OR_PURE_P (w->decl) = looping;
+		  cgraph_set_readonly_flag (w, true);
+		  cgraph_set_looping_const_or_pure_flag (w, looping);
 		  if (dump_file)
 		    fprintf (dump_file, "Function found to be %sconst: %s\n",  
 			     looping ? "looping " : "",
@@ -869,8 +869,8 @@ propagate (void)
 		  break;
 		  
 		case IPA_PURE:
-		  DECL_PURE_P (w->decl) = 1;
-		  DECL_LOOPING_CONST_OR_PURE_P (w->decl) = looping;
+		  cgraph_set_pure_flag (w, true);
+		  cgraph_set_looping_const_or_pure_flag (w, looping);
 		  if (dump_file)
 		    fprintf (dump_file, "Function found to be %spure: %s\n",  
 			     looping ? "looping " : "",

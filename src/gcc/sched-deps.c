@@ -1,7 +1,7 @@
 /* Instruction scheduling pass.  This file computes dependencies between
    instructions.
    Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) Enhanced by,
    and currently maintained by, Jim Wilson (wilson@cygnus.com)
@@ -1396,7 +1396,10 @@ add_dependence_list_and_free (struct deps *deps, rtx insn, rtx *listp,
 {
   rtx list, next;
 
-  if (deps->readonly)
+  /* We don't want to short-circuit dependencies involving debug
+     insns, because they may cause actual dependencies to be
+     disregarded.  */
+  if (deps->readonly || DEBUG_INSN_P (insn))
     {
       add_dependence_list (insn, *listp, uncond, dep_type);
       return;
@@ -1506,9 +1509,7 @@ fixup_sched_groups (rtx insn)
 
   delete_all_dependences (insn);
 
-  prev_nonnote = prev_nonnote_insn (insn);
-  while (DEBUG_INSN_P (prev_nonnote))
-    prev_nonnote = prev_nonnote_insn (prev_nonnote);
+  prev_nonnote = prev_nonnote_nondebug_insn (insn);
   if (BLOCK_FOR_INSN (insn) == BLOCK_FOR_INSN (prev_nonnote)
       && ! sched_insns_conditions_mutex_p (insn, prev_nonnote))
     add_dependence (insn, prev_nonnote, REG_DEP_ANTI);
@@ -1945,7 +1946,7 @@ sched_analyze_1 (struct deps *deps, rtx x, rtx insn)
       if (sched_deps_info->use_cselib)
 	{
 	  t = shallow_copy_rtx (dest);
-	  cselib_lookup (XEXP (t, 0), Pmode, 1);
+	  cselib_lookup_from_insn (XEXP (t, 0), Pmode, 1, insn);
 	  XEXP (t, 0) = cselib_subst_to_values (XEXP (t, 0));
 	}
       t = canon_rtx (t);
@@ -2099,7 +2100,7 @@ sched_analyze_2 (struct deps *deps, rtx x, rtx insn)
 	if (sched_deps_info->use_cselib)
 	  {
 	    t = shallow_copy_rtx (t);
-	    cselib_lookup (XEXP (t, 0), Pmode, 1);
+	    cselib_lookup_from_insn (XEXP (t, 0), Pmode, 1, insn);
 	    XEXP (t, 0) = cselib_subst_to_values (XEXP (t, 0));
 	  }
 
@@ -2172,6 +2173,11 @@ sched_analyze_2 (struct deps *deps, rtx x, rtx insn)
     /* Force pending stores to memory in case a trap handler needs them.  */
     case TRAP_IF:
       flush_pending_lists (deps, insn, true, false);
+      break;
+
+    case PREFETCH:
+      if (PREFETCH_SCHEDULE_BARRIER_P (x))
+	reg_pending_barrier = TRUE_BARRIER;
       break;
 
     case UNSPEC_VOLATILE:
@@ -2334,9 +2340,7 @@ sched_analyze_insn (struct deps *deps, rtx x, rtx insn)
   if (JUMP_P (insn))
     {
       rtx next;
-      next = next_nonnote_insn (insn);
-      while (next && DEBUG_INSN_P (next))
-	next = next_nonnote_insn (next);
+      next = next_nonnote_nondebug_insn (insn);
       if (next && BARRIER_P (next))
 	reg_pending_barrier = MOVE_BARRIER;
       else
@@ -2949,10 +2953,8 @@ deps_start_bb (struct deps *deps, rtx head)
      hard registers correct.  */
   if (! reload_completed && !LABEL_P (head))
     {
-      rtx insn = prev_nonnote_insn (head);
+      rtx insn = prev_nonnote_nondebug_insn (head);
 
-      while (insn && DEBUG_INSN_P (insn))
-	insn = prev_nonnote_insn (insn);
       if (insn && CALL_P (insn))
 	deps->in_post_call_group_p = post_call_initial;
     }
@@ -2966,7 +2968,7 @@ sched_analyze (struct deps *deps, rtx head, rtx tail)
   rtx insn;
 
   if (sched_deps_info->use_cselib)
-    cselib_init (true);
+    cselib_init (CSELIB_RECORD_MEMORY);
 
   deps_start_bb (deps, head);
 
@@ -3045,15 +3047,19 @@ sched_free_deps (rtx head, rtx tail, bool resolved_p)
 }
 
 /* Initialize variables for region data dependence analysis.
-   n_bbs is the number of region blocks.  */
+   When LAZY_REG_LAST is true, do not allocate reg_last array
+   of struct deps immediately.  */
 
 void
-init_deps (struct deps *deps)
+init_deps (struct deps *deps, bool lazy_reg_last)
 {
   int max_reg = (reload_completed ? FIRST_PSEUDO_REGISTER : max_reg_num ());
 
   deps->max_reg = max_reg;
-  deps->reg_last = XCNEWVEC (struct deps_reg, max_reg);
+  if (lazy_reg_last)
+    deps->reg_last = NULL;
+  else
+    deps->reg_last = XCNEWVEC (struct deps_reg, max_reg);
   INIT_REG_SET (&deps->reg_last_in_use);
   INIT_REG_SET (&deps->reg_conditional_sets);
 
@@ -3074,6 +3080,18 @@ init_deps (struct deps *deps)
   deps->readonly = 0;
 }
 
+/* Init only reg_last field of DEPS, which was not allocated before as
+   we inited DEPS lazily.  */
+void
+init_deps_reg_last (struct deps *deps)
+{
+  gcc_assert (deps && deps->max_reg > 0);
+  gcc_assert (deps->reg_last == NULL);
+
+  deps->reg_last = XCNEWVEC (struct deps_reg, deps->max_reg);
+}
+
+
 /* Free insn lists found in DEPS.  */
 
 void
@@ -3081,6 +3099,14 @@ free_deps (struct deps *deps)
 {
   unsigned i;
   reg_set_iterator rsi;
+
+  /* We set max_reg to 0 when this context was already freed.  */
+  if (deps->max_reg == 0)
+    {
+      gcc_assert (deps->reg_last == NULL);
+      return;
+    }
+  deps->max_reg = 0;
 
   free_INSN_LIST_list (&deps->pending_read_insns);
   free_EXPR_LIST_list (&deps->pending_read_mems);
@@ -3104,7 +3130,10 @@ free_deps (struct deps *deps)
   CLEAR_REG_SET (&deps->reg_last_in_use);
   CLEAR_REG_SET (&deps->reg_conditional_sets);
 
-  free (deps->reg_last);
+  /* As we initialize reg_last lazily, it is possible that we didn't allocate
+     it at all.  */
+  if (deps->reg_last)
+    free (deps->reg_last);
   deps->reg_last = NULL;
 
   deps = NULL;
